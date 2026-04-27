@@ -1,0 +1,1 @@
+export const BASE_URL = "https://kidharhaibus-backend-production.up.railway.app";
