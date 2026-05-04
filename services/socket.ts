@@ -1,9 +1,8 @@
 import { io } from "socket.io-client";
 
-const socket = io("https://kidharhaibus-backend-production.up.railway.app", {
+const socket = io("http://192.168.29.190:5000", {
   transports: ["websocket"],
   reconnection: true,
-  reconnectionAttempts: 5,
 });
 
 export default socket;

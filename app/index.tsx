@@ -51,7 +51,7 @@ export default function Login() {
       <View style={styles.passwordBox}>
         <TextInput
           placeholder="Password"
-          style={{ flex: 1, padding: 10 }}
+          style={{ flex: 1, padding: 10, color: "#000" }}
           secureTextEntry={!showPassword}
           value={password}
           onChangeText={setPassword}

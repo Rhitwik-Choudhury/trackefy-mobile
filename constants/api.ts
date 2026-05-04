@@ -1,1 +1,6 @@
-export const BASE_URL = "https://kidharhaibus-backend-production.up.railway.app";
+// export const BASE_URL = "https://kidharhaibus-backend-production.up.railway.app";
+const LOCAL = "http://192.168.29.190:5000";
+const PROD = "https://kidharhaibus-backend-production.up.railway.app";
+
+// 👇 switch here
+export const BASE_URL = LOCAL;

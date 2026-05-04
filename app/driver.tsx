@@ -1,63 +1,34 @@
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import socket from "../services/socket";
+import { BASE_URL } from "../constants/api";
 
 export default function DriverScreen() {
   const router = useRouter();
 
   const [driverData, setDriverData] = useState<any>(null);
+
+  // 🔥 store watcher reference
+  const locationWatcher = useRef<any>(null);
+
   const isOnTrip = driverData?.isOnTrip;
 
   useEffect(() => {
     fetchDriver();
   }, []);
-  
-  useEffect(() => {
-    let subscription: any;
 
-    const startTracking = async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
-
-      subscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 3000,
-          distanceInterval: 5,
-        },
-        (location) => {
-          if (!driverData?.busId || !driverData?.isOnTrip) return;
-
-          const busId =
-            typeof driverData.busId === "object"
-              ? driverData.busId._id
-              : driverData.busId;
-
-          socket.emit("driverLocation", {
-            driverId: driverData._id,
-            busId,
-            lat: location.coords.latitude,
-            lng: location.coords.longitude,
-          });
-        }
-      );
-    };
-
-    if (driverData) startTracking();
-
-    return () => subscription?.remove();
-  }, [driverData]);
+  // ❌ REMOVED AUTO TRACKING useEffect
 
   const fetchDriver = async () => {
     try {
       const token = await AsyncStorage.getItem("token");
 
       const res = await fetch(
-        "https://kidharhaibus-backend-production.up.railway.app/api/driver/me",
+        `${BASE_URL}/api/driver/me`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -66,10 +37,46 @@ export default function DriverScreen() {
       );
 
       const data = await res.json();
-
       setDriverData(data.driver);
     } catch (err) {
       console.log(err);
+    }
+  };
+
+  // ✅ START TRACKING ONLY WHEN TRIP STARTS
+  const startTracking = async (driver: any) => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") return;
+
+    locationWatcher.current = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.High,
+        timeInterval: 3000,
+        distanceInterval: 5,
+      },
+      (location) => {
+        if (!driver?.busId || !driver?.isOnTrip) return;
+
+        const busId =
+          typeof driver.busId === "object"
+            ? driver.busId._id
+            : driver.busId;
+
+        socket.emit("driverLocation", {
+          driverId: driver._id,
+          busId,
+          lat: location.coords.latitude,
+          lng: location.coords.longitude,
+        });
+      }
+    );
+  };
+
+  // ✅ STOP TRACKING
+  const stopTracking = () => {
+    if (locationWatcher.current) {
+      locationWatcher.current.remove();
+      locationWatcher.current = null;
     }
   };
 
@@ -78,7 +85,7 @@ export default function DriverScreen() {
       const token = await AsyncStorage.getItem("token");
 
       await fetch(
-        "https://kidharhaibus-backend-production.up.railway.app/api/driver/start-trip",
+        `${BASE_URL}/api/driver/start-trip`,
         {
           method: "POST",
           headers: {
@@ -87,7 +94,30 @@ export default function DriverScreen() {
         }
       );
 
-      fetchDriver(); // ✅ ADD THIS
+      // 🔥 refresh driver
+      const res = await fetch(
+        `${BASE_URL}/api/driver/me`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await res.json();
+      setDriverData(data.driver);
+
+      socket.emit("trip:start", {
+        driverId: data.driver._id,
+        busId:
+          typeof data.driver.busId === "object"
+            ? data.driver.busId._id
+            : data.driver.busId,
+      });
+
+      // 🔥 start tracking AFTER trip starts
+      startTracking(data.driver);
+
     } catch (err) {
       console.log(err);
     }
@@ -98,7 +128,7 @@ export default function DriverScreen() {
       const token = await AsyncStorage.getItem("token");
 
       await fetch(
-        "https://kidharhaibus-backend-production.up.railway.app/api/driver/end-trip",
+        `${BASE_URL}/api/driver/end-trip`,
         {
           method: "POST",
           headers: {
@@ -107,7 +137,18 @@ export default function DriverScreen() {
         }
       );
 
-      fetchDriver(); // ✅ ADD THIS
+      socket.emit("trip:end", {
+        driverId: driverData._id,
+        busId:
+          typeof driverData.busId === "object"
+            ? driverData.busId._id
+            : driverData.busId,
+      });
+
+      // 🔥 stop tracking immediately
+      stopTracking();
+
+      fetchDriver();
     } catch (err) {
       console.log(err);
     }
@@ -135,7 +176,7 @@ export default function DriverScreen() {
           </Text>
         </View>
 
-        {/* TRIP STATUS CARD */}
+        {/* TRIP STATUS */}
         <View style={styles.statusCard}>
           <Text style={styles.statusTitle}>Trip Status</Text>
 
@@ -158,12 +199,22 @@ export default function DriverScreen() {
         )}
 
         {/* LOGOUT */}
-        <TouchableOpacity
-          style={{ marginTop: 20 }}
-          onPress={() => router.replace("/")}
-        >
-          <Text style={{ color: "#555" }}>Logout</Text>
-        </TouchableOpacity>
+        <View style={{ position: "absolute", top: 50, right: 20, zIndex: 10 }}>
+          <TouchableOpacity
+            onPress={async () => {
+              await AsyncStorage.removeItem("token");
+              router.replace("/");
+            }}
+            style={{
+              backgroundColor: "#ef4444",
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 8,
+            }}
+          >
+            <Text style={{ color: "white", fontWeight: "600" }}>Logout</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   );

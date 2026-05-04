@@ -1,35 +1,97 @@
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import socket from "../services/socket";
+import MapView, { Marker, Polyline } from "react-native-maps";
+import * as Location from 'expo-location';
+import { BASE_URL } from "../constants/api";
+import "../firebase";
+import messaging from '@react-native-firebase/messaging';
 
 export default function ParentScreen() {
   const router = useRouter();
+
   const [parentData, setParentData] = useState<any>(null);
   const [busLocation, setBusLocation] = useState<any>(null);
+  const [animatedLocation, setAnimatedLocation] = useState<any>(null);
+  const [tripStatus, setTripStatus] = useState<string>("idle");
+  const [path, setPath] = useState<any[]>([]);
+  const [pickupLocation, setPickupLocation] = useState<any>(null);
+
+  const [isPickingLocation, setIsPickingLocation] = useState(false);
+  const [tempLocation, setTempLocation] = useState<any>(null);
+
+  const [isAutoFollow, setIsAutoFollow] = useState(true);
+
+  const mapRef = useRef<any>(null);
+
   const parent = parentData?.parent;
   const child = parent?.children?.[0];
   const bus = child?.busId;
   const driver = bus?.driverId;
 
+  // ================= FCM SETUP =================
+  useEffect(() => {
+    const setupFCM = async () => {
+      try {
+        await messaging().requestPermission();
+
+        const token = await messaging().getToken();
+        console.log("FCM TOKEN:", token);
+
+        const authToken = await AsyncStorage.getItem("token");
+
+        await fetch(`${BASE_URL}/api/parent/save-fcm-token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({ token }),
+        });
+      } catch (err) {
+        console.log("FCM setup error:", err);
+      }
+    };
+
+    setupFCM();
+
+    const unsubscribe = messaging().onMessage(async remoteMessage => {
+      console.log("Foreground message:", remoteMessage);
+      if (remoteMessage?.notification?.body) {
+        alert(remoteMessage.notification.body);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // ================= FETCH =================
   useEffect(() => {
     const fetchParent = async () => {
       try {
         const token = await AsyncStorage.getItem("token");
 
-        const res = await fetch(
-          "https://kidharhaibus-backend-production.up.railway.app/api/parent/me",
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const res = await fetch(`${BASE_URL}/api/parent/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
         const data = await res.json();
         setParentData(data);
+
+        if (data?.parent?.children?.[0]?.busId?.tripStatus) {
+          setTripStatus(data.parent.children[0].busId.tripStatus);
+        }
+
+        if (data?.parent?.stopLocation) {
+          setPickupLocation({
+            latitude: data.parent.stopLocation.lat,
+            longitude: data.parent.stopLocation.lng,
+          });
+        }
+
       } catch (err) {
         console.log(err);
       }
@@ -38,14 +100,58 @@ export default function ParentScreen() {
     fetchParent();
   }, []);
 
+  // ================= SMOOTH ANIMATION =================
+  const animateMarker = (start: any, end: any) => {
+    let i = 0;
+    const steps = 30;
+
+    const latStep = (end.latitude - start.latitude) / steps;
+    const lngStep = (end.longitude - start.longitude) / steps;
+
+    const interval = setInterval(() => {
+      i++;
+
+      setAnimatedLocation((prev: any) => {
+        if (!prev) return start;
+
+        return {
+          latitude: prev.latitude + latStep,
+          longitude: prev.longitude + lngStep,
+        };
+      });
+
+      if (i >= steps) clearInterval(interval);
+    }, 50);
+  };
+
+  // ================= SOCKET =================
   useEffect(() => {
     if (!bus?._id) return;
 
     socket.emit("joinBusRoom", { busId: bus._id });
 
     socket.on("location-update", (data) => {
-      console.log("LIVE LOCATION:", data);
+      const newCoord = {
+        latitude: data.lat,
+        longitude: data.lng,
+      };
+
       setBusLocation(data);
+
+      if (!animatedLocation) {
+        setAnimatedLocation(newCoord);
+      } else {
+        animateMarker(animatedLocation, newCoord);
+      }
+
+      setPath((prev) => {
+        const newPath = [...prev, newCoord];
+        return newPath.slice(-100);
+      });
+    });
+
+    socket.on("tripStatus", (data) => {
+      setTripStatus(data.status);
     });
 
     socket.on("alert", (data) => {
@@ -54,59 +160,194 @@ export default function ParentScreen() {
 
     return () => {
       socket.off("location-update");
+      socket.off("tripStatus");
       socket.off("alert");
     };
   }, [bus?._id]);
 
+  // ================= AUTO FOLLOW =================
+  useEffect(() => {
+    if (animatedLocation && tripStatus === "started" && isAutoFollow) {
+      mapRef.current?.animateToRegion({
+        latitude: animatedLocation.latitude,
+        longitude: animatedLocation.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+    }
+  }, [animatedLocation, isAutoFollow]);
+
+  // ================= CURRENT LOCATION =================
+  const useCurrentLocation = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+
+    if (status !== "granted") {
+      alert("Permission denied");
+      return;
+    }
+
+    const location = await Location.getCurrentPositionAsync({});
+
+    setTempLocation({
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    });
+  };
+
+  const getStatusText = () => {
+    if (tripStatus === "started") return "🟢 Live";
+    if (tripStatus === "ended") return "🔴 Trip Ended";
+    return "⚪ Waiting";
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#f5f6fa" }}>
       <View style={styles.container}>
-        {/* HEADER */}
         <Text style={styles.header}>Hello,</Text>
         <Text style={styles.name}>{parent?.fullName || "Parent"}</Text>
 
-        {/* BUS CARD */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>🚌 Assigned Bus</Text>
-
-          <Text style={styles.busNumber}>
-            {bus?.busNumber || "--"}
-          </Text>
-
-          <Text style={styles.route}>
-            Route: {bus?.route || "N/A"}
-          </Text>
-          <Text style={styles.infoText}>
-            Status: {busLocation ? "🟢 Live" : "⚪ Offline"}
-          </Text>
+          <Text style={styles.busNumber}>{bus?.busNumber || "--"}</Text>
+          <Text style={styles.route}>Route: {bus?.route || "N/A"}</Text>
+          <Text style={styles.status}>Status: {getStatusText()}</Text>
         </View>
 
-        {/* CHILD + DRIVER INFO */}
         <View style={styles.infoCard}>
-          <Text style={styles.infoText}>
-            👦 Child: {child?.name || "N/A"}
-          </Text>
-
+          <Text style={styles.infoText}>👦 Child: {child?.name || "N/A"}</Text>
           <Text style={styles.infoText}>
             👨‍✈️ Driver: {driver?.fullName || "Not Assigned"}
           </Text>
-
-          <Text style={styles.infoText}>
-            ETA: -- mins
-          </Text>
         </View>
 
-        {/* BUTTON */}
-        <TouchableOpacity style={styles.button}>
-          <Text style={styles.buttonText}>Track Bus</Text>
+        <MapView
+          provider="google"
+          ref={mapRef}
+          style={styles.map}
+          initialRegion={{
+            latitude: busLocation?.lat || 26.1573,
+            longitude: busLocation?.lng || 91.8173,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }}
+          onTouchStart={() => setIsAutoFollow(false)}
+        >
+          {animatedLocation && (
+            <Marker coordinate={animatedLocation}>
+              <Image
+                source={require("../assets/bus.png")}
+                style={{ width: 40, height: 40 }}
+              />
+            </Marker>
+          )}
+
+          {path.length > 0 && (
+            <Polyline coordinates={path} strokeWidth={4} strokeColor="#2563eb" />
+          )}
+
+          {pickupLocation && (
+            <Marker coordinate={pickupLocation} pinColor="green" />
+          )}
+        </MapView>
+
+        <TouchableOpacity
+          onPress={() => {
+            if (animatedLocation) {
+              mapRef.current.animateToRegion({
+                latitude: animatedLocation.latitude,
+                longitude: animatedLocation.longitude,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              });
+              setIsAutoFollow(true);
+            }
+          }}
+          style={styles.recenter}
+        >
+          <Text>📍 Center</Text>
         </TouchableOpacity>
 
-        {/* LOGOUT */}
         <TouchableOpacity
-          style={{ marginTop: 20 }}
-          onPress={() => router.replace("/")}
+          style={styles.button}
+          onPress={() => setIsPickingLocation(true)}
         >
-          <Text style={{ color: "#555" }}>Logout</Text>
+          <Text style={styles.buttonText}>Set Pickup Location</Text>
+        </TouchableOpacity>
+
+        {isPickingLocation && (
+          <View style={styles.fullscreen}>
+            <MapView
+              provider="google"
+              style={{ flex: 1 }}
+              initialRegion={{
+                latitude: pickupLocation?.latitude || 26.1573,
+                longitude: pickupLocation?.longitude || 91.8173,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }}
+              onPress={(e) => setTempLocation(e.nativeEvent.coordinate)}
+            >
+              {tempLocation && (
+                <Marker coordinate={tempLocation} pinColor="green" />
+              )}
+            </MapView>
+
+            <TouchableOpacity
+              style={styles.useCurrentBtn}
+              onPress={useCurrentLocation}
+            >
+              <Text style={{ color: "#fff" }}>Use Current Location</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.confirmBtn}
+              onPress={async () => {
+                if (!tempLocation) return alert("Select location");
+
+                const token = await AsyncStorage.getItem("token");
+
+                await fetch(
+                  `${BASE_URL}/api/parent/set-pickup-location`,
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                      lat: tempLocation.latitude,
+                      lng: tempLocation.longitude,
+                    }),
+                  }
+                );
+
+                setPickupLocation(tempLocation);
+                setIsPickingLocation(false);
+                alert("Saved ✅");
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                Confirm Location
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setIsPickingLocation(false)}
+            >
+              <Text style={{ color: "#fff" }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={async () => {
+            await AsyncStorage.removeItem("token");
+            router.replace("/");
+          }}
+        >
+          <Text style={{ color: "white" }}>Logout</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -114,73 +355,71 @@ export default function ParentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: "#f5f6fa",
-  },
-
-  header: {
-    fontSize: 18,
-    color: "#666",
-  },
-
-  name: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#2563eb",
-    marginBottom: 20,
-  },
-
-  card: {
+  container: { flex: 1, padding: 20 },
+  header: { fontSize: 18, color: "#666" },
+  name: { fontSize: 26, fontWeight: "bold", color: "#2563eb", marginBottom: 20 },
+  card: { backgroundColor: "#fff", padding: 15, borderRadius: 12, elevation: 3 },
+  cardTitle: { fontWeight: "bold" },
+  busNumber: { fontSize: 40, fontWeight: "bold", color: "#2563eb" },
+  route: { color: "#666" },
+  status: { marginTop: 5, fontWeight: "bold" },
+  infoCard: { backgroundColor: "#fff", padding: 15, borderRadius: 12, marginTop: 15 },
+  infoText: { marginBottom: 5 },
+  map: { height: 300, marginTop: 20, borderRadius: 10 },
+  recenter: {
+    position: "absolute",
+    bottom: 140,
+    right: 20,
     backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 20,
-    elevation: 3,
+    padding: 10,
+    borderRadius: 20,
   },
-
-  cardTitle: {
-    fontSize: 16,
-    color: "#555",
-    marginBottom: 10,
-  },
-
-  busNumber: {
-    fontSize: 40,
-    fontWeight: "bold",
-    color: "#2563eb",
-  },
-
-  route: {
-    color: "#666",
-    marginTop: 5,
-  },
-
-  infoCard: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    elevation: 2,
-  },
-
-  infoText: {
-    fontSize: 16,
-    marginBottom: 8,
-    color: "#333",
-  },
-
   button: {
-    marginTop: 30,
+    marginTop: 20,
     backgroundColor: "#2563eb",
     padding: 15,
     borderRadius: 10,
     alignItems: "center",
   },
-
-  buttonText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
+  buttonText: { color: "#fff", fontWeight: "bold" },
+  fullscreen: {
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "#fff",
+    zIndex: 100,
+  },
+  useCurrentBtn: {
+    position: "absolute",
+    top: 50,
+    left: 20,
+    backgroundColor: "#2563eb",
+    padding: 10,
+    borderRadius: 8,
+  },
+  confirmBtn: {
+    position: "absolute",
+    bottom: 40,
+    left: 20,
+    right: 20,
+    backgroundColor: "#2563eb",
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  cancelBtn: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    backgroundColor: "#ef4444",
+    padding: 10,
+    borderRadius: 8,
+  },
+  logoutBtn: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    backgroundColor: "#ef4444",
+    padding: 10,
+    borderRadius: 8,
   },
 });
