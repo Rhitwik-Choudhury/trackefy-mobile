@@ -3,4 +3,4 @@ const LOCAL = "http://192.168.29.190:5000";
 const PROD = "https://kidharhaibus-backend-production.up.railway.app";
 
 // 👇 switch here
-export const BASE_URL = LOCAL;
+export const BASE_URL = PROD;

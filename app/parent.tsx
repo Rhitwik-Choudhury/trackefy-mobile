@@ -1,3 +1,4 @@
+import "../firebase";
 import { View, Text, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
@@ -7,8 +8,8 @@ import socket from "../services/socket";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import * as Location from 'expo-location';
 import { BASE_URL } from "../constants/api";
-import "../firebase";
 import messaging from '@react-native-firebase/messaging';
+import { getApp } from '@react-native-firebase/app';
 
 export default function ParentScreen() {
   const router = useRouter();
@@ -36,6 +37,10 @@ export default function ParentScreen() {
   useEffect(() => {
     const setupFCM = async () => {
       try {
+        // 🔥 Ensure Firebase is initialized
+        const app = getApp();
+
+        await messaging().registerDeviceForRemoteMessages();
         await messaging().requestPermission();
 
         const token = await messaging().getToken();
@@ -51,6 +56,9 @@ export default function ParentScreen() {
           },
           body: JSON.stringify({ token }),
         });
+
+        console.log("TOKEN SENT TO BACKEND:", token);
+
       } catch (err) {
         console.log("FCM setup error:", err);
       }
