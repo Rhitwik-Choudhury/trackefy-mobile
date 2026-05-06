@@ -48,7 +48,7 @@ export default function ParentScreen() {
 
         const authToken = await AsyncStorage.getItem("token");
 
-        await fetch(`${BASE_URL}/api/parent/save-fcm-token`, {
+        await fetch(`${BASE_URL}/parent/save-fcm-token`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -82,9 +82,15 @@ export default function ParentScreen() {
       try {
         const token = await AsyncStorage.getItem("token");
 
-        const res = await fetch(`${BASE_URL}/api/parent/me`, {
+        const res = await fetch(`${BASE_URL}/parent/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.log("API ERROR:", text);
+          return;
+        }
 
         const data = await res.json();
         setParentData(data);
@@ -315,7 +321,7 @@ export default function ParentScreen() {
                 const token = await AsyncStorage.getItem("token");
 
                 await fetch(
-                  `${BASE_URL}/api/parent/set-pickup-location`,
+                  `${BASE_URL}/parent/set-pickup-location`,
                   {
                     method: "POST",
                     headers: {
