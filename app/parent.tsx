@@ -29,8 +29,14 @@ export default function ParentScreen() {
   const mapRef = useRef<any>(null);
 
   const parent = parentData;
-  const child = parent?.children?.[0] || null;
+
+  const child =
+    parent?.children && parent.children.length > 0
+      ? parent.children[0]
+      : null;
+
   const bus = child?.busId || null;
+
   const driver = bus?.driverId || null;
 
   // ================= FCM SETUP =================
@@ -84,7 +90,7 @@ export default function ParentScreen() {
 
         if (stored) {
           const parsed = JSON.parse(stored);
-          setParentData(parsed);
+          // setParentData(parsed);
         }
 
         const token = await AsyncStorage.getItem("token");
