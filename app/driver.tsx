@@ -28,7 +28,7 @@ export default function DriverScreen() {
       const token = await AsyncStorage.getItem("token");
 
       const res = await fetch(
-        `${BASE_URL}/api/driver/me`,
+        `${BASE_URL}/driver/me`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -85,7 +85,7 @@ export default function DriverScreen() {
       const token = await AsyncStorage.getItem("token");
 
       await fetch(
-        `${BASE_URL}/api/driver/start-trip`,
+        `${BASE_URL}/driver/start-trip`,
         {
           method: "POST",
           headers: {
@@ -96,7 +96,7 @@ export default function DriverScreen() {
 
       // 🔥 refresh driver
       const res = await fetch(
-        `${BASE_URL}/api/driver/me`,
+        `${BASE_URL}/driver/me`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -128,7 +128,7 @@ export default function DriverScreen() {
       const token = await AsyncStorage.getItem("token");
 
       await fetch(
-        `${BASE_URL}/api/driver/end-trip`,
+        `${BASE_URL}/driver/end-trip`,
         {
           method: "POST",
           headers: {

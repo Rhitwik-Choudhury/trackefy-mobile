@@ -17,8 +17,8 @@ export default function Login() {
     try {
       const url =
         role === "parent"
-          ? `${BASE_URL}/api/parent/login`
-          : `${BASE_URL}/api/driver/login`;
+          ? `${BASE_URL}/parent/login`
+          : `${BASE_URL}/driver/login`;
 
       const res = await axios.post(
         url,
@@ -27,12 +27,21 @@ export default function Login() {
       );
 
       await AsyncStorage.setItem("token", res.data.token);
+      if (role === "parent") {
+        await AsyncStorage.setItem("parentData", JSON.stringify(res.data.parent));
+      }
 
       if (role === "parent") router.replace("/parent");
       else router.replace("/driver");
     } catch (err: any) {
-      if (err.response) alert(err.response.data?.message || "Login failed");
-      else alert("Server not responding");
+      console.log("LOGIN ERROR:", err.response?.data || err.message);
+      if (err.response) {
+        console.log("BACKEND ERROR:", err.response.data);
+        alert(err.response.data?.message || "Login failed");
+      } else {
+        console.log("NETWORK ERROR:", err.message);
+        alert("Server not responding");
+      }
     }
   };
 

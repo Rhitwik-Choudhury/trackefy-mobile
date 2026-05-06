@@ -31,7 +31,7 @@ export default function ParentScreen() {
   const parent = parentData?.parent;
   const child = parent?.children?.[0];
   const bus = child?.busId;
-  const driver = bus?.driverId;
+  const driver = bus?.driver || bus?.driverId;
 
   // ================= FCM SETUP =================
   useEffect(() => {
@@ -78,40 +78,31 @@ export default function ParentScreen() {
 
   // ================= FETCH =================
   useEffect(() => {
-    const fetchParent = async () => {
+    const loadParent = async () => {
       try {
+        const stored = await AsyncStorage.getItem("parentData");
+
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setParentData(parsed);
+        }
+
         const token = await AsyncStorage.getItem("token");
 
         const res = await fetch(`${BASE_URL}/parent/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!res.ok) {
-          const text = await res.text();
-          console.log("API ERROR:", text);
-          return;
-        }
-
         const data = await res.json();
+
         setParentData(data);
-
-        if (data?.parent?.children?.[0]?.busId?.tripStatus) {
-          setTripStatus(data.parent.children[0].busId.tripStatus);
-        }
-
-        if (data?.parent?.stopLocation) {
-          setPickupLocation({
-            latitude: data.parent.stopLocation.lat,
-            longitude: data.parent.stopLocation.lng,
-          });
-        }
 
       } catch (err) {
         console.log(err);
       }
     };
 
-    fetchParent();
+    loadParent();
   }, []);
 
   // ================= SMOOTH ANIMATION =================
