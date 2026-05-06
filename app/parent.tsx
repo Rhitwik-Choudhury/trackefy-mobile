@@ -28,10 +28,10 @@ export default function ParentScreen() {
 
   const mapRef = useRef<any>(null);
 
-  const parent = parentData?.parent;
-  const child = parent?.children?.[0];
-  const bus = child?.busId;
-  const driver = bus?.driver || bus?.driverId;
+  const parent = parentData;
+  const child = parent?.children?.[0] || null;
+  const bus = child?.busId || null;
+  const driver = bus?.driverId || null;
 
   // ================= FCM SETUP =================
   useEffect(() => {
@@ -95,7 +95,7 @@ export default function ParentScreen() {
 
         const data = await res.json();
 
-        setParentData(data);
+        setParentData(data.parent);
 
       } catch (err) {
         console.log(err);
