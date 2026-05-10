@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "670959126319",
+    "project_id": "trackefy-940e2",
+    "storage_bucket": "trackefy-940e2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:670959126319:android:7102424f7cfbd7b70903da",
+        "android_client_info": {
+          "package_name": "com.trackefy.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC7IdB4q9qO9hfrCBWKDa0WGRPZrmh5ITQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
