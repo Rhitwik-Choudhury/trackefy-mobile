@@ -1,4 +1,4 @@
-import "../firebase";
+// import "../firebase";
 import { View, Text, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
@@ -9,9 +9,10 @@ import MapView, { Marker, Polyline } from "react-native-maps";
 import * as Location from 'expo-location';
 import { BASE_URL } from "../constants/api";
 import messaging from '@react-native-firebase/messaging';
-import { getApp } from '@react-native-firebase/app';
+// import { getApp } from '@react-native-firebase/app';
 
 export default function ParentScreen() {
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   const [parentData, setParentData] = useState<any>(null);
@@ -44,7 +45,6 @@ export default function ParentScreen() {
     const setupFCM = async () => {
       try {
         // 🔥 Ensure Firebase is initialized
-        const app = getApp();
 
         await messaging().registerDeviceForRemoteMessages();
         await messaging().requestPermission();
@@ -73,9 +73,22 @@ export default function ParentScreen() {
     setupFCM();
 
     const unsubscribe = messaging().onMessage(async remoteMessage => {
-      console.log("Foreground message:", remoteMessage);
-      if (remoteMessage?.notification?.body) {
-        alert(remoteMessage.notification.body);
+
+      console.log(
+        "🔥 FOREGROUND FCM:",
+        JSON.stringify(remoteMessage, null, 2)
+      );
+
+      const title =
+        remoteMessage?.notification?.title ||
+        remoteMessage?.data?.title;
+
+      const body =
+        remoteMessage?.notification?.body ||
+        remoteMessage?.data?.body;
+
+      if (title || body) {
+        alert(`${title || ""}\n${body || ""}`);
       }
     });
 
@@ -86,13 +99,6 @@ export default function ParentScreen() {
   useEffect(() => {
     const loadParent = async () => {
       try {
-        const stored = await AsyncStorage.getItem("parentData");
-
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          // setParentData(parsed);
-        }
-
         const token = await AsyncStorage.getItem("token");
 
         const res = await fetch(`${BASE_URL}/parent/me`, {
@@ -102,6 +108,7 @@ export default function ParentScreen() {
         const data = await res.json();
 
         setParentData(data.parent);
+        setLoading(false);
 
       } catch (err) {
         console.log(err);
@@ -210,6 +217,14 @@ export default function ParentScreen() {
     if (tripStatus === "ended") return "🔴 Trip Ended";
     return "⚪ Waiting";
   };
+
+  if (loading || !parentData) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#f5f6fa" }}>

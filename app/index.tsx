@@ -31,8 +31,11 @@ export default function Login() {
         await AsyncStorage.setItem("parentData", JSON.stringify(res.data.parent));
       }
 
-      if (role === "parent") router.replace("/parent");
-      else router.replace("/driver");
+      if (role === "parent") {
+        setTimeout(() => router.push("/parent"), 100);
+      } else {
+        setTimeout(() => router.push("/driver"), 100);
+      }
     } catch (err: any) {
       console.log("LOGIN ERROR:", err.response?.data || err.message);
       if (err.response) {

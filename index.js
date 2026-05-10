@@ -1,3 +1,4 @@
+import './firebase';
 import messaging from '@react-native-firebase/messaging';
 import { AppRegistry } from 'react-native';
 import notifee, { AndroidImportance } from '@notifee/react-native';

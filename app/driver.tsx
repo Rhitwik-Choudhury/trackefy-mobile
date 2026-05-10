@@ -9,19 +9,13 @@ import { BASE_URL } from "../constants/api";
 
 export default function DriverScreen() {
   const router = useRouter();
-
   const [driverData, setDriverData] = useState<any>(null);
-
-  // 🔥 store watcher reference
   const locationWatcher = useRef<any>(null);
-
   const isOnTrip = driverData?.isOnTrip;
 
   useEffect(() => {
     fetchDriver();
   }, []);
-
-  // ❌ REMOVED AUTO TRACKING useEffect
 
   const fetchDriver = async () => {
     try {
@@ -55,15 +49,16 @@ export default function DriverScreen() {
         distanceInterval: 5,
       },
       (location) => {
-        if (!driver?.busId || !driver?.isOnTrip) return;
+        const currentDriver = driverData || driver;
 
+        if (!currentDriver?.busId) return;
         const busId =
-          typeof driver.busId === "object"
-            ? driver.busId._id
-            : driver.busId;
+          typeof currentDriver.busId === "object"
+            ? currentDriver.busId._id
+            : currentDriver.busId;
 
         socket.emit("driverLocation", {
-          driverId: driver._id,
+          driverId: currentDriver._id,
           busId,
           lat: location.coords.latitude,
           lng: location.coords.longitude,
@@ -72,7 +67,6 @@ export default function DriverScreen() {
     );
   };
 
-  // ✅ STOP TRACKING
   const stopTracking = () => {
     if (locationWatcher.current) {
       locationWatcher.current.remove();
@@ -107,12 +101,14 @@ export default function DriverScreen() {
       const data = await res.json();
       setDriverData(data.driver);
 
+      const busId =
+        typeof data.driver.busId === "object"
+          ? data.driver.busId._id
+          : data.driver.busId;
+
       socket.emit("trip:start", {
         driverId: data.driver._id,
-        busId:
-          typeof data.driver.busId === "object"
-            ? data.driver.busId._id
-            : data.driver.busId,
+        busId,
       });
 
       // 🔥 start tracking AFTER trip starts
@@ -137,12 +133,14 @@ export default function DriverScreen() {
         }
       );
 
+      const currentBusId =
+        typeof driverData.busId === "object"
+          ? driverData.busId._id
+          : driverData.busId;
+
       socket.emit("trip:end", {
         driverId: driverData._id,
-        busId:
-          typeof driverData.busId === "object"
-            ? driverData.busId._id
-            : driverData.busId,
+        busId: currentBusId,
       });
 
       // 🔥 stop tracking immediately
