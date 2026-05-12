@@ -1,10 +1,9 @@
 import './firebase';
-import messaging from '@react-native-firebase/messaging';
-import { AppRegistry } from 'react-native';
-import notifee, { AndroidImportance } from '@notifee/react-native';
-import App from './App';
 
-// 🔥 CREATE CHANNEL
+import messaging from '@react-native-firebase/messaging';
+import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
+
+// Create notification channel
 async function createChannel() {
   await notifee.createChannel({
     id: 'default',
@@ -15,9 +14,18 @@ async function createChannel() {
 
 createChannel().catch(console.error);
 
-// 🔥 BACKGROUND / KILLED STATE HANDLER
+// Notifee background event handler
+notifee.onBackgroundEvent(async ({ type, detail }) => {
+  console.log('🔔 NOTIFEE BACKGROUND EVENT:', type, detail);
+
+  if (type === EventType.PRESS) {
+    console.log('Notification pressed in background/killed state');
+  }
+});
+
+// Background / killed state FCM handler
 messaging().setBackgroundMessageHandler(async remoteMessage => {
-  console.log('Background message:', remoteMessage);
+  console.log('🔥 BACKGROUND FCM:', remoteMessage);
 
   await notifee.displayNotification({
     title:
@@ -35,8 +43,9 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
       pressAction: {
         id: 'default',
       },
-    }
+    },
   });
 });
 
-AppRegistry.registerComponent('main', () => App);
+// Start Expo Router AFTER background handler is registered
+import 'expo-router/entry';

@@ -1,4 +1,5 @@
 // import "../firebase";
+import notifee from '@notifee/react-native';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
@@ -48,6 +49,7 @@ export default function ParentScreen() {
 
         await messaging().registerDeviceForRemoteMessages();
         await messaging().requestPermission();
+        await notifee.requestPermission();
 
         const token = await messaging().getToken();
         console.log("FCM TOKEN:", token);
@@ -95,6 +97,75 @@ export default function ParentScreen() {
     return unsubscribe;
   }, []);
 
+  const applyInitialBusState = (parent: any) => {
+    const loadedChild =
+      parent?.children && parent.children.length > 0
+        ? parent.children[0]
+        : null;
+
+    const loadedBus = loadedChild?.busId || null;
+
+    if (!loadedBus) return;
+
+    // ✅ Load saved/current trip status from backend
+    if (loadedBus.tripStatus) {
+      setTripStatus(loadedBus.tripStatus);
+    }
+
+    // ✅ Load current live bus location from backend
+    if (
+      loadedBus.currentLocation &&
+      loadedBus.currentLocation.lat !== undefined &&
+      loadedBus.currentLocation.lng !== undefined
+    ) {
+      const coord = {
+        latitude: loadedBus.currentLocation.lat,
+        longitude: loadedBus.currentLocation.lng,
+      };
+
+      setBusLocation({
+        lat: loadedBus.currentLocation.lat,
+        lng: loadedBus.currentLocation.lng,
+        lastLocationUpdatedAt: loadedBus.lastLocationUpdatedAt,
+      });
+
+      setAnimatedLocation(coord);
+      setPath([coord]);
+
+      setTimeout(() => {
+        mapRef.current?.animateToRegion({
+          latitude: coord.latitude,
+          longitude: coord.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        });
+      }, 500);
+    }
+
+    // ✅ Load saved pickup location if backend sends it
+    if (
+      parent?.pickupLocation?.coordinates &&
+      parent.pickupLocation.coordinates.length === 2
+    ) {
+      setPickupLocation({
+        latitude: parent.pickupLocation.coordinates[1],
+        longitude: parent.pickupLocation.coordinates[0],
+      });
+    }
+
+    // ✅ If your backend still sends stopLocation instead of pickupLocation
+    if (
+      parent?.stopLocation &&
+      parent.stopLocation.lat !== undefined &&
+      parent.stopLocation.lng !== undefined
+    ) {
+      setPickupLocation({
+        latitude: parent.stopLocation.lat,
+        longitude: parent.stopLocation.lng,
+      });
+    }
+  };
+
   // ================= FETCH =================
   useEffect(() => {
     const loadParent = async () => {
@@ -108,6 +179,8 @@ export default function ParentScreen() {
         const data = await res.json();
 
         setParentData(data.parent);
+        // ✅ IMPORTANT: hydrate dashboard from backend immediately
+        applyInitialBusState(data.parent);
         setLoading(false);
 
       } catch (err) {
@@ -148,7 +221,7 @@ export default function ParentScreen() {
 
     socket.emit("joinBusRoom", { busId: bus._id });
 
-    socket.on("location-update", (data) => {
+    const handleLocationUpdate = (data: any) => {
       const newCoord = {
         latitude: data.lat,
         longitude: data.lng,
@@ -156,17 +229,26 @@ export default function ParentScreen() {
 
       setBusLocation(data);
 
-      if (!animatedLocation) {
-        setAnimatedLocation(newCoord);
-      } else {
-        animateMarker(animatedLocation, newCoord);
-      }
+      setAnimatedLocation((prev: any) => {
+        if (!prev) return newCoord;
+
+        animateMarker(prev, newCoord);
+        return prev;
+      });
 
       setPath((prev) => {
         const newPath = [...prev, newCoord];
         return newPath.slice(-100);
       });
-    });
+
+      setTripStatus("started");
+    };
+
+    // ✅ Normal foreground socket update
+    socket.on("location-update", handleLocationUpdate);
+
+    // ✅ Background REST update emitted from backend controller
+    socket.on("busLocationUpdated", handleLocationUpdate);
 
     socket.on("tripStatus", (data) => {
       setTripStatus(data.status);
@@ -177,7 +259,8 @@ export default function ParentScreen() {
     });
 
     return () => {
-      socket.off("location-update");
+      socket.off("location-update", handleLocationUpdate);
+      socket.off("busLocationUpdated", handleLocationUpdate);
       socket.off("tripStatus");
       socket.off("alert");
     };

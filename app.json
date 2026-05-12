@@ -35,6 +35,15 @@
     },
     "plugins": [
       "@react-native-firebase/app",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Trackefy to access your location while a trip is active so parents can track the school bus.",
+          "locationWhenInUsePermission": "Allow Trackefy to access your location while using the app.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
       "expo-router",
       [
         "expo-build-properties",

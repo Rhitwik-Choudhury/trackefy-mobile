@@ -4,8 +4,51 @@ import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
+import * as TaskManager from "expo-task-manager";
 import socket from "../services/socket";
 import { BASE_URL } from "../constants/api";
+
+const BACKGROUND_LOCATION_TASK = "TRACKefy_DRIVER_BACKGROUND_LOCATION";
+
+TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) => {
+  if (error) {
+    console.log("Background location task error:", error);
+    return;
+  }
+
+  try {
+    const locations = data?.locations;
+    const location = locations?.[0];
+
+    if (!location) return;
+
+    const token = await AsyncStorage.getItem("token");
+
+    if (!token) {
+      console.log("No token found for background location update");
+      return;
+    }
+
+    await fetch(`${BASE_URL}/driver/location`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        lat: location.coords.latitude,
+        lng: location.coords.longitude,
+      }),
+    });
+
+    console.log("📍 Background location sent:", {
+      lat: location.coords.latitude,
+      lng: location.coords.longitude,
+    });
+  } catch (err) {
+    console.log("Background location send error:", err);
+  }
+});
 
 export default function DriverScreen() {
   const router = useRouter();
@@ -16,6 +59,12 @@ export default function DriverScreen() {
   useEffect(() => {
     fetchDriver();
   }, []);
+
+  useEffect(() => {
+    if (driverData?.isOnTrip) {
+      startTracking(driverData);
+    }
+  }, [driverData?.isOnTrip]);
 
   const fetchDriver = async () => {
     try {
@@ -39,39 +88,108 @@ export default function DriverScreen() {
 
   // ✅ START TRACKING ONLY WHEN TRIP STARTS
   const startTracking = async (driver: any) => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") return;
+    if (locationWatcher.current) {
+      return;
+    }
+    const { status: foregroundStatus } =
+      await Location.requestForegroundPermissionsAsync();
 
+    if (foregroundStatus !== "granted") {
+      alert("Foreground location permission is required");
+      return;
+    }
+
+    const { status: backgroundStatus } =
+      await Location.requestBackgroundPermissionsAsync();
+
+    if (backgroundStatus !== "granted") {
+      alert(
+        "Background location permission is required so parents can track the bus when the driver locks the phone."
+      );
+      return;
+    }
+
+    // ✅ Foreground tracking: keep existing smooth realtime socket behavior
     locationWatcher.current = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.High,
         timeInterval: 3000,
         distanceInterval: 5,
       },
-      (location) => {
+      async (location) => {
         const currentDriver = driverData || driver;
 
         if (!currentDriver?.busId) return;
+
         const busId =
           typeof currentDriver.busId === "object"
             ? currentDriver.busId._id
             : currentDriver.busId;
 
+        // Existing socket realtime flow
         socket.emit("driverLocation", {
           driverId: currentDriver._id,
           busId,
           lat: location.coords.latitude,
           lng: location.coords.longitude,
         });
+
+        // ✅ Also save through REST so DB/currentLocation stays fresh
+        const token = await AsyncStorage.getItem("token");
+
+        await fetch(`${BASE_URL}/driver/location`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            lat: location.coords.latitude,
+            lng: location.coords.longitude,
+          }),
+        });
       }
     );
+
+    const hasStarted =
+      await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+
+    if (!hasStarted) {
+      await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+        accuracy: Location.Accuracy.High,
+        timeInterval: 3000,
+        distanceInterval: 5,
+
+        // ✅ Android foreground service for background tracking
+        foregroundService: {
+          notificationTitle: "Trackefy trip is active",
+          notificationBody: "Sharing bus location with parents",
+          notificationColor: "#2563eb",
+        },
+
+        // iOS related, harmless for Android
+        showsBackgroundLocationIndicator: true,
+        pausesUpdatesAutomatically: false,
+      });
+    }
+
+    console.log("✅ Foreground + background tracking started");
   };
 
-  const stopTracking = () => {
+  const stopTracking = async () => {
     if (locationWatcher.current) {
       locationWatcher.current.remove();
       locationWatcher.current = null;
     }
+
+    const hasStarted =
+      await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+
+    if (hasStarted) {
+      await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+    }
+
+    console.log("🛑 Foreground + background tracking stopped");
   };
 
   const handleStartTrip = async () => {
@@ -111,9 +229,6 @@ export default function DriverScreen() {
         busId,
       });
 
-      // 🔥 start tracking AFTER trip starts
-      startTracking(data.driver);
-
     } catch (err) {
       console.log(err);
     }
@@ -144,7 +259,7 @@ export default function DriverScreen() {
       });
 
       // 🔥 stop tracking immediately
-      stopTracking();
+      await stopTracking();
 
       fetchDriver();
     } catch (err) {
