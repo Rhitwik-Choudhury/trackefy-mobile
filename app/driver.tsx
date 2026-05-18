@@ -133,21 +133,6 @@ export default function DriverScreen() {
           lat: location.coords.latitude,
           lng: location.coords.longitude,
         });
-
-        // ✅ Also save through REST so DB/currentLocation stays fresh
-        const token = await AsyncStorage.getItem("token");
-
-        await fetch(`${BASE_URL}/driver/location`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            lat: location.coords.latitude,
-            lng: location.coords.longitude,
-          }),
-        });
       }
     );
 
@@ -157,8 +142,8 @@ export default function DriverScreen() {
     if (!hasStarted) {
       await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
         accuracy: Location.Accuracy.High,
-        timeInterval: 3000,
-        distanceInterval: 5,
+        timeInterval: 5000,
+        distanceInterval: 10,
 
         // ✅ Android foreground service for background tracking
         foregroundService: {

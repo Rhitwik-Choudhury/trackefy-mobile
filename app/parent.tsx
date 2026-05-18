@@ -1,6 +1,6 @@
 // import "../firebase";
 import notifee from '@notifee/react-native';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Image, Modal } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -27,6 +27,8 @@ export default function ParentScreen() {
   const [tempLocation, setTempLocation] = useState<any>(null);
 
   const [isAutoFollow, setIsAutoFollow] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const mapRef = useRef<any>(null);
 
@@ -247,9 +249,6 @@ export default function ParentScreen() {
     // ✅ Normal foreground socket update
     socket.on("location-update", handleLocationUpdate);
 
-    // ✅ Background REST update emitted from backend controller
-    socket.on("busLocationUpdated", handleLocationUpdate);
-
     socket.on("tripStatus", (data) => {
       setTripStatus(data.status);
     });
@@ -260,7 +259,6 @@ export default function ParentScreen() {
 
     return () => {
       socket.off("location-update", handleLocationUpdate);
-      socket.off("busLocationUpdated", handleLocationUpdate);
       socket.off("tripStatus");
       socket.off("alert");
     };
@@ -312,21 +310,49 @@ export default function ParentScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#f5f6fa" }}>
       <View style={styles.container}>
-        <Text style={styles.header}>Hello,</Text>
-        <Text style={styles.name}>{parent?.fullName || "Parent"}</Text>
+        <View style={styles.topRow}>
+          <View>
+            <Text style={styles.header}>Hello,</Text>
+            <Text style={styles.name}>{parent?.fullName || "Parent"}</Text>
+          </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>🚌 Assigned Bus</Text>
-          <Text style={styles.busNumber}>{bus?.busNumber || "--"}</Text>
-          <Text style={styles.route}>Route: {bus?.route || "N/A"}</Text>
-          <Text style={styles.status}>Status: {getStatusText()}</Text>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => setMenuOpen(!menuOpen)}
+          >
+            <Text style={styles.menuIcon}>☰</Text>
+          </TouchableOpacity>
+
+          {menuOpen && (
+            <View style={styles.dropdown}>
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setMenuOpen(false);
+                  setDetailsOpen(true);
+                }}
+              >
+                <Text style={styles.dropdownText}>Show Details</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={async () => {
+                  await AsyncStorage.removeItem("token");
+                  router.replace("/");
+                }}
+              >
+                <Text style={[styles.dropdownText, { color: "#ef4444" }]}>
+                  Logout
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
-        <View style={styles.infoCard}>
-          <Text style={styles.infoText}>👦 Child: {child?.name || "N/A"}</Text>
-          <Text style={styles.infoText}>
-            👨‍✈️ Driver: {driver?.fullName || "Not Assigned"}
-          </Text>
+        <View style={styles.statusCardNew}>
+          <Text style={styles.statusLabel}>Trip Status</Text>
+          <Text style={styles.statusValue}>{getStatusText()}</Text>
         </View>
 
         <MapView
@@ -449,15 +475,48 @@ export default function ParentScreen() {
           </View>
         )}
 
-        <TouchableOpacity
-          style={styles.logoutBtn}
-          onPress={async () => {
-            await AsyncStorage.removeItem("token");
-            router.replace("/");
-          }}
+        <Modal
+          visible={detailsOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setDetailsOpen(false)}
         >
-          <Text style={{ color: "white" }}>Logout</Text>
-        </TouchableOpacity>
+          <View style={styles.modalOverlay}>
+            <View style={styles.detailsModal}>
+              <Text style={styles.detailsTitle}>Bus Details</Text>
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Assigned Bus</Text>
+                <Text style={styles.detailValue}>{bus?.busNumber || "--"}</Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Route</Text>
+                <Text style={styles.detailValue}>{bus?.route || "N/A"}</Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Child</Text>
+                <Text style={styles.detailValue}>{child?.name || "N/A"}</Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Driver</Text>
+                <Text style={styles.detailValue}>
+                  {driver?.fullName || "Not Assigned"}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.closeDetailsBtn}
+                onPress={() => setDetailsOpen(false)}
+              >
+                <Text style={styles.closeDetailsText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
       </View>
     </SafeAreaView>
   );
@@ -474,7 +533,7 @@ const styles = StyleSheet.create({
   status: { marginTop: 5, fontWeight: "bold" },
   infoCard: { backgroundColor: "#fff", padding: 15, borderRadius: 12, marginTop: 15 },
   infoText: { marginBottom: 5 },
-  map: { height: 300, marginTop: 20, borderRadius: 10 },
+  map: { height: 450, marginTop: 12, borderRadius: 16 },
   recenter: {
     position: "absolute",
     bottom: 140,
@@ -530,5 +589,125 @@ const styles = StyleSheet.create({
     backgroundColor: "#ef4444",
     padding: 10,
     borderRadius: 8,
+  },
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 20,
+    position: "relative",
+    zIndex: 20,
+  },
+
+  menuButton: {
+    backgroundColor: "#ffffff",
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 3,
+  },
+
+  menuIcon: {
+    fontSize: 26,
+    fontWeight: "bold",
+    color: "#111827",
+  },
+
+  dropdown: {
+    position: "absolute",
+    top: 52,
+    right: 0,
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    paddingVertical: 8,
+    width: 160,
+    elevation: 6,
+    zIndex: 50,
+  },
+
+  dropdownItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+
+  dropdownText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#111827",
+  },
+
+  statusCardNew: {
+    backgroundColor: "#ffffff",
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 16,
+    elevation: 2,
+  },
+
+  statusLabel: {
+    color: "#6b7280",
+    fontSize: 14,
+    marginBottom: 6,
+  },
+
+  statusValue: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111827",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+
+  detailsModal: {
+    width: "100%",
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    padding: 20,
+    elevation: 8,
+  },
+
+  detailsTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#2563eb",
+    marginBottom: 18,
+  },
+
+  detailRow: {
+    marginBottom: 14,
+  },
+
+  detailLabel: {
+    color: "#6b7280",
+    fontSize: 14,
+    marginBottom: 4,
+  },
+
+  detailValue: {
+    color: "#111827",
+    fontSize: 17,
+    fontWeight: "700",
+  },
+
+  closeDetailsBtn: {
+    marginTop: 10,
+    backgroundColor: "#2563eb",
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+
+  closeDetailsText: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 16,
   },
 });

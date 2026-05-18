@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import axios from "axios";
@@ -50,92 +50,237 @@ export default function Login() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Trackefy 🚍</Text>
+      <View style={styles.loginCard}>
+        {/* LOGO */}
+        <View style={styles.logoCircle}>
+          <Image
+            source={require("../assets/logo.jpeg")}
+            style={styles.logoBus}
+            resizeMode="cover"
+          />
+        </View>
 
-      <TextInput
-        placeholder="Email"
-        style={styles.input}
-        value={email}
-        onChangeText={setEmail}
-      />
+        <Text style={styles.title}>Trackefy</Text>
+        <Text style={styles.subtitle}>
+          Track your child’s school bus in real time
+        </Text>
 
-      {/* ✅ PASSWORD WITH EYE */}
-      <View style={styles.passwordBox}>
+        {/* EMAIL */}
         <TextInput
-          placeholder="Password"
-          style={{ flex: 1, padding: 10, color: "#000" }}
-          secureTextEntry={!showPassword}
-          value={password}
-          onChangeText={setPassword}
+          placeholder="📧  Email"
+          placeholderTextColor="#9ca3af"
+          style={styles.input}
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
         />
-        <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-          <Text style={{ padding: 10 }}>
-            {showPassword ? "🙈" : "👁️"}
-          </Text>
+
+        {/* PASSWORD */}
+        <View style={styles.passwordBox}>
+          <TextInput
+            placeholder="🔒  Password"
+            placeholderTextColor="#9ca3af"
+            style={styles.passwordInput}
+            secureTextEntry={!showPassword}
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+            <Text style={styles.eyeText}>
+              {showPassword ? "🙈" : "👁️"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ROLE SELECTOR */}
+        <View style={styles.roleContainer}>
+          <TouchableOpacity
+            style={[
+              styles.roleTab,
+              role === "parent" && styles.activeRoleTab,
+            ]}
+            onPress={() => setRole("parent")}
+          >
+            <Text
+              style={[
+                styles.roleText,
+                role === "parent" && styles.activeRoleText,
+              ]}
+            >
+              Parent
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.roleTab,
+              role === "driver" && styles.activeRoleTab,
+            ]}
+            onPress={() => setRole("driver")}
+          >
+            <Text
+              style={[
+                styles.roleText,
+                role === "driver" && styles.activeRoleText,
+              ]}
+            >
+              Driver
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* SIGN IN */}
+        <TouchableOpacity style={styles.button} onPress={handleLogin}>
+          <Text style={styles.buttonText}>Sign In</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => router.push("/register" as any)}>
+          <Text style={styles.createText}>Create Account</Text>
         </TouchableOpacity>
       </View>
-
-      <View style={styles.roleContainer}>
-        <TouchableOpacity onPress={() => setRole("parent")}>
-          <Text style={role === "parent" ? styles.active : styles.inactive}>
-            Parent
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => setRole("driver")}>
-          <Text style={role === "driver" ? styles.active : styles.inactive}>
-            Driver
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Sign In</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={() => router.push("/register" as any)}>
-        <Text style={{ marginTop: 15 }}>Create Account</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 20, backgroundColor: "#fff" },
-  title: { fontSize: 28, textAlign: "center", marginBottom: 20 },
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 22,
+    backgroundColor: "#F8FAFC",
+  },
+
+  loginCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    padding: 24,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+  },
+
+  logoCircle: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: "#DBEAFE",
+    alignSelf: "center",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 18,
+    overflow: "hidden",
+  },
+
+  logoBus: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+  },
+
+  title: {
+    fontSize: 42,
+    fontWeight: "900",
+    color: "#111827",
+    textAlign: "center",
+    letterSpacing: 0.5,
+  },
+
+  subtitle: {
+    fontSize: 15,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 6,
+    marginBottom: 28,
+    fontWeight: "500",
+  },
 
   input: {
+    height: 58,
     borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 10,
-    marginBottom: 10,
-    borderRadius: 6,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    marginBottom: 14,
+    borderRadius: 16,
+    fontSize: 16,
+    color: "#111827",
   },
 
   passwordBox: {
+    height: 58,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 6,
-    marginBottom: 10,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    marginBottom: 18,
   },
 
-  button: {
-    backgroundColor: "#2563eb",
-    padding: 12,
-    borderRadius: 6,
-    marginTop: 10,
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 16,
+    color: "#111827",
+    fontSize: 16,
   },
 
-  buttonText: { color: "#fff", textAlign: "center" },
+  eyeText: {
+    paddingHorizontal: 16,
+    fontSize: 18,
+  },
 
   roleContainer: {
     flexDirection: "row",
-    justifyContent: "space-around",
-    marginVertical: 10,
+    backgroundColor: "#EEF2FF",
+    borderRadius: 16,
+    padding: 5,
+    marginBottom: 18,
   },
 
-  active: { color: "blue", fontWeight: "bold" },
-  inactive: { color: "gray" },
+  roleTab: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+
+  activeRoleTab: {
+    backgroundColor: "#2563EB",
+  },
+
+  roleText: {
+    color: "#6B7280",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+
+  activeRoleText: {
+    color: "#FFFFFF",
+  },
+
+  button: {
+    backgroundColor: "#2563EB",
+    paddingVertical: 16,
+    borderRadius: 16,
+    marginTop: 4,
+    elevation: 2,
+  },
+
+  buttonText: {
+    color: "#FFFFFF",
+    textAlign: "center",
+    fontSize: 17,
+    fontWeight: "800",
+  },
+
+  createText: {
+    marginTop: 18,
+    textAlign: "center",
+    color: "#2563EB",
+    fontWeight: "700",
+    fontSize: 15,
+  },
 });
