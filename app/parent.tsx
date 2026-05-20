@@ -1,6 +1,6 @@
 // import "../firebase";
 import notifee from '@notifee/react-native';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Modal } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Linking } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -333,6 +333,18 @@ export default function ParentScreen() {
                 }}
               >
                 <Text style={styles.dropdownText}>Show Details</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setMenuOpen(false);
+                  Linking.openURL("https://trackefy.in/delete-account");
+                }}
+              >
+                <Text style={[styles.dropdownText, { color: "#dc2626" }]}>
+                  Delete Account
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity

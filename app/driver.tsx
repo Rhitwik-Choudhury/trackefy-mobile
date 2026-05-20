@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Linking } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -53,6 +53,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
 export default function DriverScreen() {
   const router = useRouter();
   const [driverData, setDriverData] = useState<any>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const locationWatcher = useRef<any>(null);
   const isOnTrip = driverData?.isOnTrip;
 
@@ -296,22 +297,43 @@ export default function DriverScreen() {
           </TouchableOpacity>
         )}
 
-        {/* LOGOUT */}
-        <View style={{ position: "absolute", top: 50, right: 20, zIndex: 10 }}>
+        {/* MENU */}
+        <View style={styles.menuWrapper}>
           <TouchableOpacity
-            onPress={async () => {
-              await AsyncStorage.removeItem("token");
-              router.replace("/");
-            }}
-            style={{
-              backgroundColor: "#ef4444",
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 8,
-            }}
+            style={styles.menuButton}
+            onPress={() => setMenuOpen(!menuOpen)}
           >
-            <Text style={{ color: "white", fontWeight: "600" }}>Logout</Text>
+            <Text style={styles.menuIcon}>☰</Text>
           </TouchableOpacity>
+
+          {menuOpen && (
+            <View style={styles.dropdown}>
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setMenuOpen(false);
+                  Linking.openURL("https://trackefy.in/delete-account");
+                }}
+              >
+                <Text style={[styles.dropdownText, { color: "#dc2626" }]}>
+                  Delete Account
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={async () => {
+                  setMenuOpen(false);
+                  await AsyncStorage.removeItem("token");
+                  router.replace("/");
+                }}
+              >
+                <Text style={[styles.dropdownText, { color: "#ef4444" }]}>
+                  Logout
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
     </SafeAreaView>
@@ -406,5 +428,48 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
     fontSize: 16,
+  },
+  menuWrapper: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    zIndex: 20,
+    alignItems: "flex-end",
+  },
+
+  menuButton: {
+    backgroundColor: "#ffffff",
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 3,
+  },
+
+  menuIcon: {
+    fontSize: 26,
+    fontWeight: "bold",
+    color: "#111827",
+  },
+
+  dropdown: {
+    marginTop: 8,
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    paddingVertical: 8,
+    width: 170,
+    elevation: 6,
+  },
+
+  dropdownItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+
+  dropdownText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#111827",
   },
 });
