@@ -12,7 +12,7 @@
       "supportsTablet": true
     },
     "android": {
-      "googleServicesFile": "$GOOGLE_SERVICES_JSON",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
