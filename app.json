@@ -28,7 +28,6 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.trackefy.app",
-
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCi7bhX4TEHZNBQXjNuM3u6MouyPaSV0yQ"
@@ -81,7 +80,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "173d93e6-c5d8-4475-83f8-865892ee9fcd"
+        "projectId": "0b0b4cf5-e7ec-4f07-a1a3-562b9ed7afd4"
       }
     }
   }
