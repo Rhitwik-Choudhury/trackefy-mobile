@@ -4,7 +4,7 @@
     "slug": "trackefy-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/logo.jpeg",
     "scheme": "trackefymobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -65,13 +65,13 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/startingImage.png",
-          "imageWidth": 1080,
-          "resizeMode": "cover",
-          "backgroundColor": "#020B1F",
+          "image": "./assets/logo.jpeg",
+          "imageWidth": 260,
+          "resizeMode": "contain",
+          "backgroundColor": "#F7C928",
           "dark": {
-            "image": "./assets/images/startingImage.png",
-            "backgroundColor": "#020B1F"
+            "image": "./assets/logo.jpeg",
+            "backgroundColor": "#F7C928"
           }
         }
       ]
