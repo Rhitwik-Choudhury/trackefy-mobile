@@ -22,7 +22,7 @@
         "POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/appIcon.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F7C928"
       },
       "edgeToEdgeEnabled": true,

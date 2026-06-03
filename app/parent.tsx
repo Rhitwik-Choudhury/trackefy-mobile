@@ -117,6 +117,8 @@ export default function ParentScreen() {
     // ✅ Load current live bus location from backend
     if (
       loadedBus.currentLocation &&
+      loadedBus.currentLocation.lat !== null &&
+      loadedBus.currentLocation.lng !== null &&
       loadedBus.currentLocation.lat !== undefined &&
       loadedBus.currentLocation.lng !== undefined
     ) {
@@ -372,8 +374,16 @@ export default function ParentScreen() {
           ref={mapRef}
           style={styles.map}
           initialRegion={{
-            latitude: busLocation?.lat || 26.1573,
-            longitude: busLocation?.lng || 91.8173,
+            latitude:
+              typeof busLocation?.lat === "number"
+                ? busLocation.lat
+                : 26.166449,
+
+            longitude:
+              typeof busLocation?.lng === "number"
+                ? busLocation.lng
+                : 91.705355,
+
             latitudeDelta: 0.01,
             longitudeDelta: 0.01,
           }}
