@@ -141,6 +141,9 @@ export default function DriverScreen() {
             : currentDriver.busId;
 
         // Existing socket realtime flow
+        if (!socket.connected) {
+          socket.connect();
+        }
         socket.emit("driverLocation", {
           driverId: currentDriver._id,
           busId,
@@ -223,6 +226,10 @@ export default function DriverScreen() {
           ? data.driver.busId._id
           : data.driver.busId;
 
+      if (!socket.connected) {
+        socket.connect();
+      }
+
       socket.emit("trip:start", {
         driverId: data.driver._id,
         busId,
@@ -251,6 +258,10 @@ export default function DriverScreen() {
         typeof driverData.busId === "object"
           ? driverData.busId._id
           : driverData.busId;
+
+      if (!socket.connected) {
+        socket.connect();
+      }
 
       socket.emit("trip:end", {
         driverId: driverData._id,

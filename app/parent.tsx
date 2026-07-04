@@ -239,7 +239,18 @@ export default function ParentScreen() {
   useEffect(() => {
     if (!bus?._id) return;
 
-    socket.emit("joinBusRoom", { busId: bus._id });
+    const joinRoom = () => {
+      console.log("🚌 Joining bus room:", bus._id);
+      socket.emit("joinBusRoom", { busId: bus._id });
+    };
+
+    if (socket.connected) {
+      joinRoom();
+    } else {
+      socket.connect();
+    }
+
+    socket.on("connect", joinRoom);
 
     const handleLocationUpdate = (data: any) => {
       const newCoord = {
@@ -276,6 +287,7 @@ export default function ParentScreen() {
     });
 
     return () => {
+      socket.off("connect", joinRoom);
       socket.off("location-update", handleLocationUpdate);
       socket.off("tripStatus");
       socket.off("alert");
