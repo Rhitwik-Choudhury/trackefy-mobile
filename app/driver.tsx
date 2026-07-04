@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet, Linking } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Linking, BackHandler } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -52,6 +52,19 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
 
 export default function DriverScreen() {
   const router = useRouter();
+  useEffect(() => {
+    const backAction = () => {
+      BackHandler.exitApp();
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      backAction
+    );
+
+    return () => subscription.remove();
+  }, []);
   const [driverData, setDriverData] = useState<any>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const locationWatcher = useRef<any>(null);
@@ -324,7 +337,7 @@ export default function DriverScreen() {
                 style={styles.dropdownItem}
                 onPress={async () => {
                   setMenuOpen(false);
-                  await AsyncStorage.removeItem("token");
+                  await AsyncStorage.multiRemove(["token", "role", "parentData"]);
                   router.replace("/");
                 }}
               >

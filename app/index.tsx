@@ -1,6 +1,6 @@
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { BASE_URL } from "../constants/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -12,9 +12,26 @@ export default function Login() {
   const [role, setRole] = useState("parent");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  useEffect(() => {
+    const checkLogin = async () => {
+      const token = await AsyncStorage.getItem("token");
+      const savedRole = await AsyncStorage.getItem("role");
+
+      if (token && savedRole === "parent") {
+        router.replace("/parent");
+      }
+
+      if (token && savedRole === "driver") {
+        router.replace("/driver");
+      }
+    };
+
+    checkLogin();
+  }, []);
 
   const handleLogin = async () => {
     try {
+
       const url =
         role === "parent"
           ? `${BASE_URL}/parent/login`
@@ -27,14 +44,15 @@ export default function Login() {
       );
 
       await AsyncStorage.setItem("token", res.data.token);
+      await AsyncStorage.setItem("role", role);
       if (role === "parent") {
         await AsyncStorage.setItem("parentData", JSON.stringify(res.data.parent));
       }
 
       if (role === "parent") {
-        setTimeout(() => router.push("/parent"), 100);
+        setTimeout(() => router.replace("/parent"), 100);
       } else {
-        setTimeout(() => router.push("/driver"), 100);
+        setTimeout(() => router.replace("/driver"), 100);
       }
     } catch (err: any) {
       console.log("LOGIN ERROR:", err.response?.data || err.message);

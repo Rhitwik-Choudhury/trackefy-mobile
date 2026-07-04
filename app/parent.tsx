@@ -1,6 +1,6 @@
 // import "../firebase";
 import notifee from '@notifee/react-native';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Linking } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Linking, BackHandler, Dimensions, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -12,9 +12,25 @@ import { BASE_URL } from "../constants/api";
 import messaging from '@react-native-firebase/messaging';
 // import { getApp } from '@react-native-firebase/app';
 
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
+const MAP_HEIGHT = SCREEN_HEIGHT * 0.60;
+
 export default function ParentScreen() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  useEffect(() => {
+    const backAction = () => {
+      BackHandler.exitApp();
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      backAction
+    );
+
+    return () => subscription.remove();
+  }, []);
 
   const [parentData, setParentData] = useState<any>(null);
   const [busLocation, setBusLocation] = useState<any>(null);
@@ -311,7 +327,10 @@ export default function ParentScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#f5f6fa" }}>
-      <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.topRow}>
           <View>
             <Text style={styles.header}>Hello,</Text>
@@ -352,7 +371,8 @@ export default function ParentScreen() {
               <TouchableOpacity
                 style={styles.dropdownItem}
                 onPress={async () => {
-                  await AsyncStorage.removeItem("token");
+                  setMenuOpen(false);
+                  await AsyncStorage.multiRemove(["token", "role", "parentData"]);
                   router.replace("/");
                 }}
               >
@@ -369,60 +389,62 @@ export default function ParentScreen() {
           <Text style={styles.statusValue}>{getStatusText()}</Text>
         </View>
 
-        <MapView
-          provider="google"
-          ref={mapRef}
-          style={styles.map}
-          initialRegion={{
-            latitude:
-              typeof busLocation?.lat === "number"
-                ? busLocation.lat
-                : 26.166449,
+        <View style={styles.mapContainer}>
+          <MapView
+            provider="google"
+            ref={mapRef}
+            style={styles.map}
+            initialRegion={{
+              latitude:
+                typeof busLocation?.lat === "number"
+                  ? busLocation.lat
+                  : 26.166449,
 
-            longitude:
-              typeof busLocation?.lng === "number"
-                ? busLocation.lng
-                : 91.705355,
+              longitude:
+                typeof busLocation?.lng === "number"
+                  ? busLocation.lng
+                  : 91.705355,
 
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          }}
-          onTouchStart={() => setIsAutoFollow(false)}
-        >
-          {animatedLocation && (
-            <Marker coordinate={animatedLocation}>
-              <Image
-                source={require("../assets/bus.png")}
-                style={{ width: 40, height: 40 }}
-              />
-            </Marker>
-          )}
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            }}
+            onTouchStart={() => setIsAutoFollow(false)}
+          >
+            {animatedLocation && (
+              <Marker coordinate={animatedLocation}>
+                <Image
+                  source={require("../assets/bus.png")}
+                  style={{ width: 40, height: 40 }}
+                />
+              </Marker>
+            )}
 
-          {path.length > 0 && (
-            <Polyline coordinates={path} strokeWidth={4} strokeColor="#2563eb" />
-          )}
+            {path.length > 0 && (
+              <Polyline coordinates={path} strokeWidth={4} strokeColor="#2563eb" />
+            )}
 
-          {pickupLocation && (
-            <Marker coordinate={pickupLocation} pinColor="green" />
-          )}
-        </MapView>
+            {pickupLocation && (
+              <Marker coordinate={pickupLocation} pinColor="green" />
+            )}
+          </MapView>
 
-        <TouchableOpacity
-          onPress={() => {
-            if (animatedLocation) {
-              mapRef.current.animateToRegion({
-                latitude: animatedLocation.latitude,
-                longitude: animatedLocation.longitude,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-              });
-              setIsAutoFollow(true);
-            }
-          }}
-          style={styles.recenter}
-        >
-          <Text>📍 Center</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              if (animatedLocation) {
+                mapRef.current.animateToRegion({
+                  latitude: animatedLocation.latitude,
+                  longitude: animatedLocation.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                });
+                setIsAutoFollow(true);
+              }
+            }}
+            style={styles.recenter}
+          >
+            <Text>📍 Center</Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
           style={styles.button}
@@ -539,13 +561,16 @@ export default function ParentScreen() {
           </View>
         </Modal>
 
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
+  container: {
+    padding: 20,
+    paddingBottom: 60,
+  },
   header: { fontSize: 18, color: "#666" },
   name: { fontSize: 26, fontWeight: "bold", color: "#2563eb", marginBottom: 20 },
   card: { backgroundColor: "#fff", padding: 15, borderRadius: 12, elevation: 3 },
@@ -555,17 +580,27 @@ const styles = StyleSheet.create({
   status: { marginTop: 5, fontWeight: "bold" },
   infoCard: { backgroundColor: "#fff", padding: 15, borderRadius: 12, marginTop: 15 },
   infoText: { marginBottom: 5 },
-  map: { height: 450, marginTop: 12, borderRadius: 16 },
+  mapContainer: {
+    marginTop: 12,
+    position: "relative",
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+
+  map: {
+    height: MAP_HEIGHT,
+  },
   recenter: {
     position: "absolute",
-    bottom: 140,
-    right: 20,
+    bottom: 15,
+    right: 15,
     backgroundColor: "#fff",
     padding: 10,
     borderRadius: 20,
+    elevation: 3,
   },
   button: {
-    marginTop: 20,
+    marginTop: 16,
     backgroundColor: "#2563eb",
     padding: 15,
     borderRadius: 10,
