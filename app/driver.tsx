@@ -332,6 +332,30 @@ export default function DriverScreen() {
 
           {menuOpen && (
             <View style={styles.dropdown}>
+              
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={async () => {
+                  setMenuOpen(false);
+
+                  const supported = await Linking.canOpenURL(
+                    "https://forms.gle/4skdJE5whtdKPri16"
+                  );
+
+                  if (supported) {
+                    await Linking.openURL(
+                      "https://forms.gle/4skdJE5whtdKPri16"
+                    );
+                  } else {
+                    alert("Unable to open feedback form.");
+                  }
+                }}
+              >
+                <Text style={styles.dropdownText}>
+                  💬 Feedback
+                </Text>
+              </TouchableOpacity>
+              
               <TouchableOpacity
                 style={styles.dropdownItem}
                 onPress={() => {
