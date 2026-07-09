@@ -93,10 +93,19 @@ export default function DriverScreen() {
         }
       );
 
+      if (!res.ok) {
+        throw new Error("Invalid or expired session");
+      }
+
       const data = await res.json();
+      if (!data.driver) {
+        throw new Error("Driver data not found");
+      }
       setDriverData(data.driver);
     } catch (err) {
-      console.log(err);
+      console.log("Driver profile fetch failed:", err);
+      await AsyncStorage.multiRemove(["token", "role", "parentData"]);
+      router.replace("/");
     }
   };
 

@@ -195,8 +195,15 @@ export default function ParentScreen() {
         const res = await fetch(`${BASE_URL}/parent/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (!res.ok) {
+          throw new Error("Invalid or expired session");
+        }
 
         const data = await res.json();
+        
+        if (!data.parent) {
+          throw new Error("Parent data not found");
+        }
 
         setParentData(data.parent);
         // ✅ IMPORTANT: hydrate dashboard from backend immediately
@@ -204,7 +211,10 @@ export default function ParentScreen() {
         setLoading(false);
 
       } catch (err) {
-        console.log(err);
+        console.log("Parent profile fetch failed:", err);
+        await AsyncStorage.multiRemove(["token", "role", "parentData"]);
+        setLoading(false);
+        router.replace("/");
       }
     };
 
