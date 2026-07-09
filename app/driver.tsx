@@ -10,6 +10,102 @@ import { BASE_URL } from "../constants/api";
 
 const BACKGROUND_LOCATION_TASK = "TRACKefy_DRIVER_BACKGROUND_LOCATION";
 
+const LAST_SENT_LOCATION_KEY = "TRACKefy_LAST_SENT_LOCATION";
+
+const MAX_ALLOWED_ACCURACY = 50; // meters
+const MIN_MOVEMENT_METERS = 12; // ignore tiny GPS shaking
+const MAX_REASONABLE_SPEED_MPS = 35; // ~126 km/h, rejects sudden jumps
+const SMOOTHING_FACTOR = 0.35; // 35% new point, 65% previous point
+
+const getDistanceInMeters = (
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+) => {
+  const R = 6371e3;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lng2 - lng1);
+
+  const a =
+    Math.sin(Δφ / 2) ** 2 +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const getFilteredDriverLocation = async (coords: any) => {
+  const accuracy =
+    typeof coords.accuracy === "number" ? coords.accuracy : null;
+
+  if (accuracy !== null && accuracy > MAX_ALLOWED_ACCURACY) {
+    console.log("📍 Ignored low accuracy GPS:", accuracy);
+    return null;
+  }
+
+  const current = {
+    lat: coords.latitude,
+    lng: coords.longitude,
+    timestamp: Date.now(),
+  };
+
+  const saved = await AsyncStorage.getItem(LAST_SENT_LOCATION_KEY);
+
+  if (!saved) {
+    await AsyncStorage.setItem(
+      LAST_SENT_LOCATION_KEY,
+      JSON.stringify(current)
+    );
+    return current;
+  }
+
+  const last = JSON.parse(saved);
+
+  const distance = getDistanceInMeters(
+    last.lat,
+    last.lng,
+    current.lat,
+    current.lng
+  );
+
+  const timeDiffSeconds = Math.max(
+    (current.timestamp - last.timestamp) / 1000,
+    1
+  );
+
+  const speed = distance / timeDiffSeconds;
+
+  if (distance < MIN_MOVEMENT_METERS) {
+    console.log("📍 Ignored tiny GPS movement:", distance.toFixed(2), "m");
+    return null;
+  }
+
+  if (speed > MAX_REASONABLE_SPEED_MPS && distance > 100) {
+    console.log("📍 Ignored GPS jump:", {
+      distance: distance.toFixed(2),
+      speed: speed.toFixed(2),
+    });
+    return null;
+  }
+
+  const smoothed = {
+    lat: last.lat + (current.lat - last.lat) * SMOOTHING_FACTOR,
+    lng: last.lng + (current.lng - last.lng) * SMOOTHING_FACTOR,
+    timestamp: current.timestamp,
+  };
+
+  await AsyncStorage.setItem(
+    LAST_SENT_LOCATION_KEY,
+    JSON.stringify(smoothed)
+  );
+
+  return smoothed;
+};
+
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) => {
   if (error) {
     console.log("Background location task error:", error);
@@ -28,6 +124,9 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
       console.log("No token found for background location update");
       return;
     }
+    const filteredLocation = await getFilteredDriverLocation(location.coords);
+
+    if (!filteredLocation) return;
 
     await fetch(`${BASE_URL}/driver/location`, {
       method: "POST",
@@ -36,14 +135,14 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        lat: location.coords.latitude,
-        lng: location.coords.longitude,
+        lat: filteredLocation.lat,
+        lng: filteredLocation.lng,
       }),
     });
 
     console.log("📍 Background location sent:", {
-      lat: location.coords.latitude,
-      lng: location.coords.longitude,
+      lat: filteredLocation.lat,
+      lng: filteredLocation.lng,
     });
   } catch (err) {
     console.log("Background location send error:", err);
@@ -153,11 +252,15 @@ export default function DriverScreen() {
         if (!socket.connected) {
           socket.connect();
         }
+        const filteredLocation = await getFilteredDriverLocation(location.coords);
+
+        if (!filteredLocation) return;
+
         socket.emit("driverLocation", {
           driverId: currentDriver._id,
           busId,
-          lat: location.coords.latitude,
-          lng: location.coords.longitude,
+          lat: filteredLocation.lat,
+          lng: filteredLocation.lng,
         });
       }
     );
@@ -200,6 +303,7 @@ export default function DriverScreen() {
       await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
     }
 
+    await AsyncStorage.removeItem(LAST_SENT_LOCATION_KEY);
     console.log("🛑 Foreground + background tracking stopped");
   };
 
