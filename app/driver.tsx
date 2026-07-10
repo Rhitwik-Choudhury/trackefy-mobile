@@ -262,6 +262,30 @@ export default function DriverScreen() {
           lat: filteredLocation.lat,
           lng: filteredLocation.lng,
         });
+
+        try {
+          const token = await AsyncStorage.getItem("token");
+
+          await fetch(`${BASE_URL}/driver/location`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              lat: filteredLocation.lat,
+              lng: filteredLocation.lng,
+            }),
+          });
+
+          console.log("📍 Foreground REST backup location sent:", {
+            lat: filteredLocation.lat,
+            lng: filteredLocation.lng,
+          });
+        } catch (err) {
+          console.log("Foreground REST backup location failed:", err);
+        }        
+
       }
     );
 
