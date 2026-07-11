@@ -1,6 +1,6 @@
 // import "../firebase";
 import notifee from '@notifee/react-native';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Linking, BackHandler, Dimensions, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Linking, BackHandler, Dimensions, ScrollView} from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -47,6 +47,15 @@ export default function ParentScreen() {
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const mapRef = useRef<any>(null);
+  
+  const markerAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const displayedLocationRef = useRef<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const lastLocationTimestampRef = useRef<number>(0);
+  const pollingInProgressRef = useRef(false);
 
   const parent = parentData;
 
@@ -149,6 +158,16 @@ export default function ParentScreen() {
         lastLocationUpdatedAt: loadedBus.lastLocationUpdatedAt,
       });
 
+      displayedLocationRef.current = coord;
+
+      const initialTimestamp = loadedBus.lastLocationUpdatedAt
+        ? new Date(loadedBus.lastLocationUpdatedAt).getTime()
+        : Date.now();
+
+      if (Number.isFinite(initialTimestamp)) {
+        lastLocationTimestampRef.current = initialTimestamp;
+      }
+
       setAnimatedLocation(coord);
       setPath([coord]);
 
@@ -221,30 +240,138 @@ export default function ParentScreen() {
     loadParent();
   }, []);
 
-  // ================= SMOOTH ANIMATION =================
-  const animateMarker = (start: any, end: any) => {
-    let i = 0;
-    const steps = 30;
+  // ================= SMOOTH BUS MARKER MOVEMENT =================
+  const moveBusMarker = (newCoord: {
+    latitude: number;
+    longitude: number;
+  }) => {
+    // Stop the previous animation before starting a new one.
+    if (markerAnimationRef.current) {
+      clearInterval(markerAnimationRef.current);
+      markerAnimationRef.current = null;
+    }
 
-    const latStep = (end.latitude - start.latitude) / steps;
-    const lngStep = (end.longitude - start.longitude) / steps;
+    const start = displayedLocationRef.current;
 
-    const interval = setInterval(() => {
-      i++;
+    // First valid location: show it immediately.
+    if (!start) {
+      displayedLocationRef.current = newCoord;
+      setAnimatedLocation(newCoord);
+      return;
+    }
 
-      setAnimatedLocation((prev: any) => {
-        if (!prev) return start;
+    const duration = 2000;
+    const frameInterval = 50;
+    const totalSteps = Math.max(
+      Math.round(duration / frameInterval),
+      1
+    );
 
-        return {
-          latitude: prev.latitude + latStep,
-          longitude: prev.longitude + lngStep,
-        };
-      });
+    let currentStep = 0;
 
-      if (i >= steps) clearInterval(interval);
-    }, 50);
+    markerAnimationRef.current = setInterval(() => {
+      currentStep += 1;
+
+      const progress = Math.min(currentStep / totalSteps, 1);
+
+      // Smooth easing instead of linear movement.
+      const easedProgress =
+        progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+      const nextPosition = {
+        latitude:
+          start.latitude +
+          (newCoord.latitude - start.latitude) * easedProgress,
+
+        longitude:
+          start.longitude +
+          (newCoord.longitude - start.longitude) * easedProgress,
+      };
+
+      displayedLocationRef.current = nextPosition;
+      setAnimatedLocation(nextPosition);
+
+      if (progress >= 1) {
+        if (markerAnimationRef.current) {
+          clearInterval(markerAnimationRef.current);
+          markerAnimationRef.current = null;
+        }
+
+        // Force the final position to the exact received coordinate.
+        displayedLocationRef.current = newCoord;
+        setAnimatedLocation(newCoord);
+      }
+    }, frameInterval);
   };
 
+  // ================= PROCESS LOCATION UPDATE =================
+  const processLocationUpdate = (
+    lat: unknown,
+    lng: unknown,
+    updatedAt?: string | number | Date
+  ) => {
+    const newCoord = {
+      latitude: Number(lat),
+      longitude: Number(lng),
+    };
+
+    if (
+      !Number.isFinite(newCoord.latitude) ||
+      !Number.isFinite(newCoord.longitude)
+    ) {
+      console.log("Invalid location update ignored:", { lat, lng });
+      return;
+    }
+
+    const updateTimestamp = updatedAt
+      ? new Date(updatedAt).getTime()
+      : Date.now();
+
+    if (!Number.isFinite(updateTimestamp)) {
+      return;
+    }
+
+    // Ignore an older update arriving after a newer one.
+    if (
+      lastLocationTimestampRef.current > 0 &&
+      updateTimestamp < lastLocationTimestampRef.current
+    ) {
+      return;
+    }
+
+    const current = displayedLocationRef.current;
+
+    // Avoid processing the same coordinate twice.
+    if (
+      current &&
+      Math.abs(current.latitude - newCoord.latitude) < 0.000001 &&
+      Math.abs(current.longitude - newCoord.longitude) < 0.000001
+    ) {
+      lastLocationTimestampRef.current = Math.max(
+        lastLocationTimestampRef.current,
+        updateTimestamp
+      );
+      return;
+    }
+
+    lastLocationTimestampRef.current = updateTimestamp;
+
+    setBusLocation({
+      lat: newCoord.latitude,
+      lng: newCoord.longitude,
+      lastLocationUpdatedAt: updatedAt,
+    });
+
+    moveBusMarker(newCoord);
+
+    setPath((previousPath) => {
+      const updatedPath = [...previousPath, newCoord];
+      return updatedPath.slice(-100);
+    });
+  };
+  
   // ================= SOCKET =================
   useEffect(() => {
     if (!bus?._id) return;
@@ -263,24 +390,11 @@ export default function ParentScreen() {
     socket.on("connect", joinRoom);
 
     const handleLocationUpdate = (data: any) => {
-      const newCoord = {
-        latitude: data.lat,
-        longitude: data.lng,
-      };
-
-      setBusLocation(data);
-
-      setAnimatedLocation((prev: any) => {
-        if (!prev) return newCoord;
-
-        animateMarker(prev, newCoord);
-        return prev;
-      });
-
-      setPath((prev) => {
-        const newPath = [...prev, newCoord];
-        return newPath.slice(-100);
-      });
+      processLocationUpdate(
+        data.lat,
+        data.lng,
+        data.lastLocationUpdatedAt
+      );
 
       setTripStatus("started");
     };
@@ -304,6 +418,79 @@ export default function ParentScreen() {
     };
   }, [bus?._id]);
 
+  // ================= POLLING FALLBACK =================
+  useEffect(() => {
+    if (!bus?._id) return;
+
+    let isCancelled = false;
+
+    const fetchLatestBusLocation = async () => {
+      if (pollingInProgressRef.current) return;
+
+      pollingInProgressRef.current = true;
+
+      try {
+        const token = await AsyncStorage.getItem("token");
+
+        if (!token) return;
+
+        const response = await fetch(`${BASE_URL}/parent/my-bus`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          console.log(
+            "Bus-location polling failed with status:",
+            response.status
+          );
+          return;
+        }
+
+        const data = await response.json();
+        const latestBus = data?.bus;
+
+        if (isCancelled || !latestBus) return;
+
+        if (latestBus.tripStatus) {
+          setTripStatus(latestBus.tripStatus);
+        }
+
+        const latestLocation = latestBus.currentLocation;
+
+        if (
+          latestLocation?.lat !== undefined &&
+          latestLocation?.lng !== undefined
+        ) {
+          processLocationUpdate(
+            latestLocation.lat,
+            latestLocation.lng,
+            latestBus.lastLocationUpdatedAt
+          );
+        }
+      } catch (error) {
+        console.log("Bus-location polling error:", error);
+      } finally {
+        pollingInProgressRef.current = false;
+      }
+    };
+
+    // Sync immediately when the bus becomes available.
+    fetchLatestBusLocation();
+
+    const pollingInterval = setInterval(
+      fetchLatestBusLocation,
+      8000
+    );
+
+    return () => {
+      isCancelled = true;
+      clearInterval(pollingInterval);
+      pollingInProgressRef.current = false;
+    };
+  }, [bus?._id]);
+
   // ================= AUTO FOLLOW =================
   useEffect(() => {
     if (animatedLocation && tripStatus === "started" && isAutoFollow) {
@@ -314,7 +501,17 @@ export default function ParentScreen() {
         longitudeDelta: 0.01,
       });
     }
-  }, [animatedLocation, isAutoFollow]);
+  }, [animatedLocation, isAutoFollow, tripStatus]);
+
+  // ================= CLEANUP =================
+  useEffect(() => {
+    return () => {
+      if (markerAnimationRef.current) {
+        clearInterval(markerAnimationRef.current);
+        markerAnimationRef.current = null;
+      }
+    };
+  }, []);
 
   // ================= CURRENT LOCATION =================
   const useCurrentLocation = async () => {
@@ -455,14 +652,20 @@ export default function ParentScreen() {
             }}
             onTouchStart={() => setIsAutoFollow(false)}
           >
-            {animatedLocation && (
-              <Marker coordinate={animatedLocation}>
-                <Image
-                  source={require("../assets/bus.png")}
-                  style={{ width: 40, height: 40 }}
-                />
-              </Marker>
-            )}
+          {animatedLocation && (
+            <Marker
+              coordinate={animatedLocation}
+              anchor={{ x: 0.5, y: 0.5 }}
+              flat
+              tracksViewChanges={false}
+            >
+              <Image
+                source={require("../assets/bus.png")}
+                style={{ width: 40, height: 40 }}
+                resizeMode="contain"
+              />
+            </Marker>
+          )}
 
             {path.length > 0 && (
               <Polyline coordinates={path} strokeWidth={4} strokeColor="#2563eb" />
