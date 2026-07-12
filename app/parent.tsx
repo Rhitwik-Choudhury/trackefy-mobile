@@ -56,6 +56,7 @@ export default function ParentScreen() {
   } | null>(null);
   const lastLocationTimestampRef = useRef<number>(0);
   const pollingInProgressRef = useRef(false);
+  const hasReceivedFreshLocationRef = useRef(false);
 
   const parent = parentData;
 
@@ -169,7 +170,11 @@ export default function ParentScreen() {
       }
 
       setAnimatedLocation(coord);
-      setPath([coord]);
+
+      // Show the latest saved bus position, but do not draw a
+      // route from this stored snapshot.
+      hasReceivedFreshLocationRef.current = false;
+      setPath([]);
 
       setTimeout(() => {
         mapRef.current?.animateToRegion({
@@ -367,8 +372,28 @@ export default function ParentScreen() {
     moveBusMarker(newCoord);
 
     setPath((previousPath) => {
-      const updatedPath = [...previousPath, newCoord];
-      return updatedPath.slice(-100);
+      // The first fresh update after opening becomes the
+      // beginning of the visible path.
+      if (!hasReceivedFreshLocationRef.current) {
+        hasReceivedFreshLocationRef.current = true;
+        return [newCoord];
+      }
+
+      const previousPoint =
+        previousPath.length > 0
+          ? previousPath[previousPath.length - 1]
+          : null;
+
+      // Avoid adding effectively identical points.
+      if (
+        previousPoint &&
+        Math.abs(previousPoint.latitude - newCoord.latitude) < 0.000001 &&
+        Math.abs(previousPoint.longitude - newCoord.longitude) < 0.000001
+      ) {
+        return previousPath;
+      }
+
+      return [...previousPath, newCoord].slice(-100);
     });
   };
   
@@ -404,6 +429,20 @@ export default function ParentScreen() {
 
     socket.on("tripStatus", (data) => {
       setTripStatus(data.status);
+
+      if (data.status === "started") {
+        hasReceivedFreshLocationRef.current = false;
+        setPath([]);
+
+        if (markerAnimationRef.current) {
+          clearInterval(markerAnimationRef.current);
+          markerAnimationRef.current = null;
+        }
+      }
+
+      if (data.status === "ended") {
+        hasReceivedFreshLocationRef.current = false;
+      }
     });
 
     socket.on("alert", (data) => {
@@ -656,8 +695,6 @@ export default function ParentScreen() {
             <Marker
               coordinate={animatedLocation}
               anchor={{ x: 0.5, y: 0.5 }}
-              flat
-              tracksViewChanges={false}
             >
               <Image
                 source={require("../assets/bus.png")}

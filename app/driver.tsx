@@ -12,10 +12,10 @@ const BACKGROUND_LOCATION_TASK = "TRACKefy_DRIVER_BACKGROUND_LOCATION";
 
 const LAST_SENT_LOCATION_KEY = "TRACKefy_LAST_SENT_LOCATION";
 
-const MAX_ALLOWED_ACCURACY = 50; // meters
-const MIN_MOVEMENT_METERS = 12; // ignore tiny GPS shaking
-const MAX_REASONABLE_SPEED_MPS = 35; // ~126 km/h, rejects sudden jumps
-const SMOOTHING_FACTOR = 0.35; // 35% new point, 65% previous point
+const MAX_ALLOWED_ACCURACY = 60; // Reject very poor GPS fixes
+const MIN_MOVEMENT_METERS = 3; // Allow slow traffic movement
+const MAX_REASONABLE_SPEED_MPS = 45; // About 162 km/h
+const FORCE_SEND_AFTER_MS = 10000; // Send a heartbeat every 10 seconds
 
 const getDistanceInMeters = (
   lat1: number,
@@ -38,32 +38,76 @@ const getDistanceInMeters = (
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-const getFilteredDriverLocation = async (coords: any) => {
-  const accuracy =
-    typeof coords.accuracy === "number" ? coords.accuracy : null;
+const getFilteredDriverLocation = async (
+  coords: any,
+  locationTimestamp?: number
+) => {
+  const latitude = Number(coords.latitude);
+  const longitude = Number(coords.longitude);
 
-  if (accuracy !== null && accuracy > MAX_ALLOWED_ACCURACY) {
-    console.log("📍 Ignored low accuracy GPS:", accuracy);
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    console.log("📍 Invalid GPS coordinates ignored");
+    return null;
+  }
+
+  const accuracy =
+    typeof coords.accuracy === "number"
+      ? coords.accuracy
+      : null;
+
+  if (
+    accuracy !== null &&
+    accuracy > MAX_ALLOWED_ACCURACY
+  ) {
+    console.log("📍 Low-accuracy GPS ignored:", accuracy);
     return null;
   }
 
   const current = {
-    lat: coords.latitude,
-    lng: coords.longitude,
-    timestamp: Date.now(),
+    lat: latitude,
+    lng: longitude,
+    timestamp:
+      typeof locationTimestamp === "number"
+        ? locationTimestamp
+        : Date.now(),
   };
 
-  const saved = await AsyncStorage.getItem(LAST_SENT_LOCATION_KEY);
+  const saved = await AsyncStorage.getItem(
+    LAST_SENT_LOCATION_KEY
+  );
 
   if (!saved) {
     await AsyncStorage.setItem(
       LAST_SENT_LOCATION_KEY,
       JSON.stringify(current)
     );
+
     return current;
   }
 
-  const last = JSON.parse(saved);
+  let last: {
+    lat: number;
+    lng: number;
+    timestamp: number;
+  };
+
+  try {
+    last = JSON.parse(saved);
+  } catch {
+    await AsyncStorage.setItem(
+      LAST_SENT_LOCATION_KEY,
+      JSON.stringify(current)
+    );
+
+    return current;
+  }
 
   const distance = getDistanceInMeters(
     last.lat,
@@ -72,38 +116,52 @@ const getFilteredDriverLocation = async (coords: any) => {
     current.lng
   );
 
-  const timeDiffSeconds = Math.max(
-    (current.timestamp - last.timestamp) / 1000,
-    1
+  const elapsedMs = Math.max(
+    current.timestamp - last.timestamp,
+    1000
   );
 
-  const speed = distance / timeDiffSeconds;
+  const elapsedSeconds = elapsedMs / 1000;
+  const estimatedSpeed = distance / elapsedSeconds;
 
-  if (distance < MIN_MOVEMENT_METERS) {
-    console.log("📍 Ignored tiny GPS movement:", distance.toFixed(2), "m");
+  // Ignore tiny stationary GPS noise, but still send a
+  // heartbeat after 10 seconds.
+  if (
+    distance < MIN_MOVEMENT_METERS &&
+    elapsedMs < FORCE_SEND_AFTER_MS
+  ) {
+    console.log(
+      "📍 Tiny GPS movement ignored:",
+      distance.toFixed(2),
+      "m"
+    );
+
     return null;
   }
 
-  if (speed > MAX_REASONABLE_SPEED_MPS && distance > 100) {
-    console.log("📍 Ignored GPS jump:", {
+  // Reject a sudden impossible jump only when updates
+  // are close together.
+  if (
+    elapsedMs < 10000 &&
+    distance > 100 &&
+    estimatedSpeed > MAX_REASONABLE_SPEED_MPS
+  ) {
+    console.log("📍 Sudden GPS jump ignored:", {
       distance: distance.toFixed(2),
-      speed: speed.toFixed(2),
+      speed: estimatedSpeed.toFixed(2),
+      accuracy,
     });
+
     return null;
   }
 
-  const smoothed = {
-    lat: last.lat + (current.lat - last.lat) * SMOOTHING_FACTOR,
-    lng: last.lng + (current.lng - last.lng) * SMOOTHING_FACTOR,
-    timestamp: current.timestamp,
-  };
-
+  // Save the actual accepted coordinate.
   await AsyncStorage.setItem(
     LAST_SENT_LOCATION_KEY,
-    JSON.stringify(smoothed)
+    JSON.stringify(current)
   );
 
-  return smoothed;
+  return current;
 };
 
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) => {
@@ -124,21 +182,37 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
       console.log("No token found for background location update");
       return;
     }
-    const filteredLocation = await getFilteredDriverLocation(location.coords);
+    const filteredLocation =
+      await getFilteredDriverLocation(
+        location.coords,
+        location.timestamp
+      );
 
     if (!filteredLocation) return;
 
-    await fetch(`${BASE_URL}/driver/location`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        lat: filteredLocation.lat,
-        lng: filteredLocation.lng,
-      }),
-    });
+    const response = await fetch(
+      `${BASE_URL}/driver/location`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          lat: filteredLocation.lat,
+          lng: filteredLocation.lng,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.log(
+        "Background location rejected:",
+        response.status
+      );
+
+      return;
+    }
 
     console.log("📍 Background location sent:", {
       lat: filteredLocation.lat,
@@ -234,56 +308,77 @@ export default function DriverScreen() {
     // ✅ Foreground tracking: keep existing smooth realtime socket behavior
     locationWatcher.current = await Location.watchPositionAsync(
       {
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: 3000,
-        distanceInterval: 5,
+        distanceInterval: 3,
       },
       async (location) => {
         const currentDriver = driverData || driver;
 
         if (!currentDriver?.busId) return;
 
-        const busId =
-          typeof currentDriver.busId === "object"
-            ? currentDriver.busId._id
-            : currentDriver.busId;
-
-        // Existing socket realtime flow
-        if (!socket.connected) {
-          socket.connect();
-        }
-        const filteredLocation = await getFilteredDriverLocation(location.coords);
+        const filteredLocation =
+          await getFilteredDriverLocation(
+            location.coords,
+            location.timestamp
+          );
 
         if (!filteredLocation) return;
-
-        socket.emit("driverLocation", {
-          driverId: currentDriver._id,
-          busId,
-          lat: filteredLocation.lat,
-          lng: filteredLocation.lng,
-        });
 
         try {
           const token = await AsyncStorage.getItem("token");
 
-          await fetch(`${BASE_URL}/driver/location`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              lat: filteredLocation.lat,
-              lng: filteredLocation.lng,
-            }),
-          });
+          if (!token) {
+            console.log("No token available for foreground location update");
+            return;
+          }
 
-          console.log("📍 Foreground REST backup location sent:", {
+          const sendLocation = () =>
+            fetch(`${BASE_URL}/driver/location`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                lat: filteredLocation.lat,
+                lng: filteredLocation.lng,
+              }),
+            });
+
+          let response = await sendLocation();
+
+          // Retry once if Railway/backend has a temporary server error.
+          if (response.status >= 500) {
+            console.log(
+              "Temporary location server error. Retrying:",
+              response.status
+            );
+
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, 1000);
+            });
+
+            response = await sendLocation();
+          }
+
+          if (!response.ok) {
+            const responseText = await response.text();
+
+            console.log("Foreground location rejected:", {
+              status: response.status,
+              response: responseText,
+            });
+
+            return;
+          }
+
+          console.log("📍 Foreground location saved:", {
             lat: filteredLocation.lat,
             lng: filteredLocation.lng,
           });
         } catch (err) {
-          console.log("Foreground REST backup location failed:", err);
+          console.log("Foreground location network error:", err);
         }        
 
       }
@@ -333,6 +428,9 @@ export default function DriverScreen() {
 
   const handleStartTrip = async () => {
     try {
+      await AsyncStorage.removeItem(
+        LAST_SENT_LOCATION_KEY
+      );
       const token = await AsyncStorage.getItem("token");
 
       await fetch(
