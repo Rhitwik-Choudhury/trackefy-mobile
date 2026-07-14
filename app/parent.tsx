@@ -15,6 +15,88 @@ import messaging from '@react-native-firebase/messaging';
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const MAP_HEIGHT = SCREEN_HEIGHT * 0.60;
 
+type MapCoordinate = {
+  latitude: number;
+  longitude: number;
+};
+
+const getDistanceBetweenCoordinates = (
+  start: MapCoordinate,
+  end: MapCoordinate
+) => {
+  const earthRadius = 6371e3;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+
+  const latitude1 = toRadians(start.latitude);
+  const latitude2 = toRadians(end.latitude);
+
+  const latitudeDifference = toRadians(
+    end.latitude - start.latitude
+  );
+
+  const longitudeDifference = toRadians(
+    end.longitude - start.longitude
+  );
+
+  const a =
+    Math.sin(latitudeDifference / 2) ** 2 +
+    Math.cos(latitude1) *
+      Math.cos(latitude2) *
+      Math.sin(longitudeDifference / 2) ** 2;
+
+  return (
+    2 *
+    earthRadius *
+    Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  );
+};
+
+const getBearingBetweenCoordinates = (
+  start: MapCoordinate,
+  end: MapCoordinate
+) => {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const toDegrees = (value: number) => (value * 180) / Math.PI;
+
+  const latitude1 = toRadians(start.latitude);
+  const latitude2 = toRadians(end.latitude);
+
+  const longitudeDifference = toRadians(
+    end.longitude - start.longitude
+  );
+
+  const y =
+    Math.sin(longitudeDifference) *
+    Math.cos(latitude2);
+
+  const x =
+    Math.cos(latitude1) * Math.sin(latitude2) -
+    Math.sin(latitude1) *
+      Math.cos(latitude2) *
+      Math.cos(longitudeDifference);
+
+  const bearing = toDegrees(Math.atan2(y, x));
+
+  return (bearing + 360) % 360;
+};
+
+const smoothHeading = (
+  currentHeading: number,
+  targetHeading: number
+) => {
+  // Shortest angular path, including crossing 0°/360°.
+  const difference =
+    ((targetHeading - currentHeading + 540) % 360) - 180;
+
+  const smoothingFactor = 0.4;
+
+  return (
+    currentHeading +
+    difference * smoothingFactor +
+    360
+  ) % 360;
+};
+
 export default function ParentScreen() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -35,6 +117,7 @@ export default function ParentScreen() {
   const [parentData, setParentData] = useState<any>(null);
   const [busLocation, setBusLocation] = useState<any>(null);
   const [animatedLocation, setAnimatedLocation] = useState<any>(null);
+  const [busHeading, setBusHeading] = useState(0);
   const [tripStatus, setTripStatus] = useState<string>("idle");
   const [path, setPath] = useState<any[]>([]);
   const [pickupLocation, setPickupLocation] = useState<any>(null);
@@ -57,6 +140,8 @@ export default function ParentScreen() {
   const lastLocationTimestampRef = useRef<number>(0);
   const pollingInProgressRef = useRef(false);
   const hasReceivedFreshLocationRef = useRef(false);
+  const lastHeadingLocationRef = useRef<MapCoordinate | null>(null);
+  const busHeadingRef = useRef(0);
 
   const parent = parentData;
 
@@ -160,6 +245,7 @@ export default function ParentScreen() {
       });
 
       displayedLocationRef.current = coord;
+      lastHeadingLocationRef.current = coord;
 
       const initialTimestamp = loadedBus.lastLocationUpdatedAt
         ? new Date(loadedBus.lastLocationUpdatedAt).getTime()
@@ -311,6 +397,45 @@ export default function ParentScreen() {
     }, frameInterval);
   };
 
+  // ================= BUS DIRECTION =================
+  const updateBusHeading = (newCoord: MapCoordinate) => {
+    const previousCoord = lastHeadingLocationRef.current;
+
+    if (!previousCoord) {
+      lastHeadingLocationRef.current = newCoord;
+      return;
+    }
+
+    const movementDistance = getDistanceBetweenCoordinates(
+      previousCoord,
+      newCoord
+    );
+
+    // Ignore tiny GPS movements that can make the icon shake.
+    if (movementDistance < 5) {
+      return;
+    }
+
+    const calculatedHeading = getBearingBetweenCoordinates(
+      previousCoord,
+      newCoord
+    );
+
+    const isFirstHeading = busHeadingRef.current === 0;
+
+    const nextHeading = isFirstHeading
+      ? calculatedHeading
+      : smoothHeading(
+          busHeadingRef.current,
+          calculatedHeading
+        );
+
+    busHeadingRef.current = nextHeading;
+    setBusHeading(nextHeading);
+
+    lastHeadingLocationRef.current = newCoord;
+  };
+
   // ================= PROCESS LOCATION UPDATE =================
   const processLocationUpdate = (
     lat: unknown,
@@ -369,6 +494,7 @@ export default function ParentScreen() {
       lastLocationUpdatedAt: updatedAt,
     });
 
+    updateBusHeading(newCoord);
     moveBusMarker(newCoord);
 
     setPath((previousPath) => {
@@ -433,6 +559,10 @@ export default function ParentScreen() {
       if (data.status === "started") {
         hasReceivedFreshLocationRef.current = false;
         setPath([]);
+
+        lastHeadingLocationRef.current = null;
+        busHeadingRef.current = 0;
+        setBusHeading(0);
 
         if (markerAnimationRef.current) {
           clearInterval(markerAnimationRef.current);
@@ -695,6 +825,8 @@ export default function ParentScreen() {
             <Marker
               coordinate={animatedLocation}
               anchor={{ x: 0.5, y: 0.5 }}
+              rotation={(busHeading + 180) % 360}
+              flat
             >
               <Image
                 source={require("../assets/bus.png")}
