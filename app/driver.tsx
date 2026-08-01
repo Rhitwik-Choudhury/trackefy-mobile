@@ -428,12 +428,11 @@ export default function DriverScreen() {
 
   const handleStartTrip = async () => {
     try {
-      await AsyncStorage.removeItem(
-        LAST_SENT_LOCATION_KEY
-      );
+      await AsyncStorage.removeItem(LAST_SENT_LOCATION_KEY);
+
       const token = await AsyncStorage.getItem("token");
 
-      await fetch(
+      const startResponse = await fetch(
         `${BASE_URL}/driver/start-trip`,
         {
           method: "POST",
@@ -443,7 +442,19 @@ export default function DriverScreen() {
         }
       );
 
-      // 🔥 refresh driver
+      if (!startResponse.ok) {
+        const errorText = await startResponse.text();
+
+        console.log("Start trip rejected:", {
+          status: startResponse.status,
+          response: errorText,
+        });
+
+        alert("Unable to start the trip. Please try again.");
+        return;
+      }
+
+      // Refresh driver data after the backend confirms trip start.
       const res = await fetch(
         `${BASE_URL}/driver/me`,
         {
@@ -453,25 +464,15 @@ export default function DriverScreen() {
         }
       );
 
-      const data = await res.json();
-      setDriverData(data.driver);
-
-      const busId =
-        typeof data.driver.busId === "object"
-          ? data.driver.busId._id
-          : data.driver.busId;
-
-      if (!socket.connected) {
-        socket.connect();
+      if (!res.ok) {
+        throw new Error("Unable to refresh driver information");
       }
 
-      socket.emit("trip:start", {
-        driverId: data.driver._id,
-        busId,
-      });
-
+      const data = await res.json();
+      setDriverData(data.driver);
     } catch (err) {
-      console.log(err);
+      console.log("Start trip error:", err);
+      alert("Unable to start the trip. Please check your connection.");
     }
   };
 
@@ -479,7 +480,7 @@ export default function DriverScreen() {
     try {
       const token = await AsyncStorage.getItem("token");
 
-      await fetch(
+      const endResponse = await fetch(
         `${BASE_URL}/driver/end-trip`,
         {
           method: "POST",
@@ -489,26 +490,25 @@ export default function DriverScreen() {
         }
       );
 
-      const currentBusId =
-        typeof driverData.busId === "object"
-          ? driverData.busId._id
-          : driverData.busId;
+      if (!endResponse.ok) {
+        const errorText = await endResponse.text();
 
-      if (!socket.connected) {
-        socket.connect();
+        console.log("End trip rejected:", {
+          status: endResponse.status,
+          response: errorText,
+        });
+
+        alert("Unable to end the trip. Please try again.");
+        return;
       }
 
-      socket.emit("trip:end", {
-        driverId: driverData._id,
-        busId: currentBusId,
-      });
-
-      // 🔥 stop tracking immediately
+      // Stop tracking only after the backend confirms trip end.
       await stopTracking();
 
-      fetchDriver();
+      await fetchDriver();
     } catch (err) {
-      console.log(err);
+      console.log("End trip error:", err);
+      alert("Unable to end the trip. Please check your connection.");
     }
   };
 

@@ -156,30 +156,55 @@ export default function ParentScreen() {
 
   // ================= FCM SETUP =================
   useEffect(() => {
+    const saveFcmToken = async (token: string) => {
+      try {
+        const authToken = await AsyncStorage.getItem("token");
+
+        if (!authToken || !token) {
+          console.log("FCM token save skipped");
+          return;
+        }
+
+        const response = await fetch(
+          `${BASE_URL}/parent/save-fcm-token`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authToken}`,
+            },
+            body: JSON.stringify({ token }),
+          }
+        );
+
+        if (!response.ok) {
+          const responseText = await response.text();
+
+          console.log("FCM token save failed:", {
+            status: response.status,
+            response: responseText,
+          });
+
+          return;
+        }
+
+        console.log("FCM token sent to backend:", token);
+      } catch (err) {
+        console.log("FCM token save error:", err);
+      }
+    };
+
     const setupFCM = async () => {
       try {
-        // 🔥 Ensure Firebase is initialized
-
         await messaging().registerDeviceForRemoteMessages();
         await messaging().requestPermission();
         await notifee.requestPermission();
 
         const token = await messaging().getToken();
+
         console.log("FCM TOKEN:", token);
 
-        const authToken = await AsyncStorage.getItem("token");
-
-        await fetch(`${BASE_URL}/parent/save-fcm-token`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: JSON.stringify({ token }),
-        });
-
-        console.log("TOKEN SENT TO BACKEND:", token);
-
+        await saveFcmToken(token);
       } catch (err) {
         console.log("FCM setup error:", err);
       }
@@ -187,27 +212,38 @@ export default function ParentScreen() {
 
     setupFCM();
 
-    const unsubscribe = messaging().onMessage(async remoteMessage => {
+    const unsubscribeForeground = messaging().onMessage(
+      async remoteMessage => {
+        console.log(
+          "FOREGROUND FCM:",
+          JSON.stringify(remoteMessage, null, 2)
+        );
 
-      console.log(
-        "🔥 FOREGROUND FCM:",
-        JSON.stringify(remoteMessage, null, 2)
-      );
+        const title =
+          remoteMessage?.notification?.title ||
+          remoteMessage?.data?.title;
 
-      const title =
-        remoteMessage?.notification?.title ||
-        remoteMessage?.data?.title;
+        const body =
+          remoteMessage?.notification?.body ||
+          remoteMessage?.data?.body;
 
-      const body =
-        remoteMessage?.notification?.body ||
-        remoteMessage?.data?.body;
-
-      if (title || body) {
-        alert(`${title || ""}\n${body || ""}`);
+        if (title || body) {
+          alert(`${title || ""}\n${body || ""}`);
+        }
       }
-    });
+    );
 
-    return unsubscribe;
+    const unsubscribeTokenRefresh = messaging().onTokenRefresh(
+      async refreshedToken => {
+        console.log("FCM TOKEN REFRESHED:", refreshedToken);
+        await saveFcmToken(refreshedToken);
+      }
+    );
+
+    return () => {
+      unsubscribeForeground();
+      unsubscribeTokenRefresh();
+    };
   }, []);
 
   const applyInitialBusState = (parent: any) => {

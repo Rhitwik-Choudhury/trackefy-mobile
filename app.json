@@ -2,7 +2,7 @@
   "expo": {
     "name": "Trackefy",
     "slug": "trackefy-mobile",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/appIcon.png",
     "scheme": "trackefymobile",
@@ -12,6 +12,7 @@
       "supportsTablet": true
     },
     "android": {
+      "versionCode": 2,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_FINE_LOCATION",
@@ -55,8 +56,9 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0"
           }
         }
       ],
