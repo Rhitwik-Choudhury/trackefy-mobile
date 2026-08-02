@@ -27,17 +27,22 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 messaging().setBackgroundMessageHandler(async remoteMessage => {
   console.log('🔥 BACKGROUND FCM:', remoteMessage);
 
+  // Messages containing a notification payload are displayed
+  // automatically by Android in background/killed state.
+  if (remoteMessage?.notification) {
+    return;
+  }
+
+  // Keep Notifee as a fallback for any data-only message.
+  const title =
+    remoteMessage?.data?.title || 'Trackefy Alert';
+
+  const body =
+    remoteMessage?.data?.body || '';
+
   await notifee.displayNotification({
-    title:
-      remoteMessage?.notification?.title ||
-      remoteMessage?.data?.title ||
-      'Trackefy Alert',
-
-    body:
-      remoteMessage?.notification?.body ||
-      remoteMessage?.data?.body ||
-      '',
-
+    title,
+    body,
     android: {
       channelId: 'default',
       pressAction: {

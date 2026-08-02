@@ -2,7 +2,7 @@
   "expo": {
     "name": "Trackefy",
     "slug": "trackefy-mobile",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/appIcon.png",
     "scheme": "trackefymobile",
@@ -12,7 +12,7 @@
       "supportsTablet": true
     },
     "android": {
-      "versionCode": 12,
+      "versionCode": 13,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_FINE_LOCATION",
