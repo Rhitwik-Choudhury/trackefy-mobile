@@ -1,7 +1,7 @@
 import { io } from "socket.io-client";
 
 const socket = io(
-  "https://kidharhaibus-backend-production.up.railway.app",
+  "https://api.trackefy.in",
   {
     path: "/socket.io",
     transports: ["websocket", "polling"],
