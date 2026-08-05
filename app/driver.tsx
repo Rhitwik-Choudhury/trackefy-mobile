@@ -581,14 +581,18 @@ export default function DriverScreen() {
 
             <Text style={styles.disclosureText}>
               Trackefy collects location data to enable real-time
-              school bus tracking for parents even when the app is
-              closed or not in use.
+              school bus tracking for parents and schools even when
+              the app is closed or not in use.
             </Text>
 
             <Text style={styles.disclosureSubText}>
-              Location is used during active trips so parents can
-              track the school bus in real time. To enable background
-              tracking, please select "Allow all the time".
+              Location is used only during active trips so parents and
+              schools can track the school bus in real time. To enable
+              background tracking, please select{" "}
+              <Text style={styles.permissionHighlight}>
+                "Allow all the time"
+              </Text>{" "}
+              when Android shows the location access options.
             </Text>
 
             <View style={styles.disclosureButtons}>
@@ -909,6 +913,11 @@ const styles = StyleSheet.create({
   continueText: {
     color: "#fff",
     fontWeight: "bold",
+  },
+
+  permissionHighlight: {
+    fontWeight: "bold",
+    color: "#2563eb",
   },
 
 });
