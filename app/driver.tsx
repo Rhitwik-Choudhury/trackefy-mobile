@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet, Linking, BackHandler } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Linking, BackHandler, Modal } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -240,6 +240,7 @@ export default function DriverScreen() {
   }, []);
   const [driverData, setDriverData] = useState<any>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
   const locationWatcher = useRef<any>(null);
   const isOnTrip = driverData?.isOnTrip;
 
@@ -285,23 +286,6 @@ export default function DriverScreen() {
   // ✅ START TRACKING ONLY WHEN TRIP STARTS
   const startTracking = async (driver: any) => {
     if (locationWatcher.current) {
-      return;
-    }
-    const { status: foregroundStatus } =
-      await Location.requestForegroundPermissionsAsync();
-
-    if (foregroundStatus !== "granted") {
-      alert("Foreground location permission is required");
-      return;
-    }
-
-    const { status: backgroundStatus } =
-      await Location.requestBackgroundPermissionsAsync();
-
-    if (backgroundStatus !== "granted") {
-      alert(
-        "Background location permission is required so parents can track the bus when the driver locks the phone."
-      );
       return;
     }
 
@@ -426,7 +410,7 @@ export default function DriverScreen() {
     console.log("🛑 Foreground + background tracking stopped");
   };
 
-  const handleStartTrip = async () => {
+  const startTripAfterPermissions = async () => {
     try {
       await AsyncStorage.removeItem(LAST_SENT_LOCATION_KEY);
 
@@ -476,6 +460,73 @@ export default function DriverScreen() {
     }
   };
 
+  const handleStartTrip = async () => {
+    try {
+      const foreground =
+        await Location.getForegroundPermissionsAsync();
+
+      const background =
+        await Location.getBackgroundPermissionsAsync();
+
+      if (
+        foreground.status === "granted" &&
+        background.status === "granted"
+      ) {
+        await startTripAfterPermissions();
+        return;
+      }
+
+      // Google Play prominent disclosure must appear
+      // BEFORE requesting location permissions.
+      setShowLocationDisclosure(true);
+    } catch (err) {
+      console.log("Location permission check failed:", err);
+      alert("Unable to check location permission. Please try again.");
+    }
+  };
+
+  const handleLocationDisclosureContinue = async () => {
+    setShowLocationDisclosure(false);
+
+    try {
+      let foreground =
+        await Location.getForegroundPermissionsAsync();
+
+      if (foreground.status !== "granted") {
+        foreground =
+          await Location.requestForegroundPermissionsAsync();
+      }
+
+      if (foreground.status !== "granted") {
+        alert(
+          "Location permission is required to start a trip and share the bus location."
+        );
+        return;
+      }
+
+      let background =
+        await Location.getBackgroundPermissionsAsync();
+
+      if (background.status !== "granted") {
+        background =
+          await Location.requestBackgroundPermissionsAsync();
+      }
+
+      if (background.status !== "granted") {
+        alert(
+          'Please select "Allow all the time" for location permission so Trackefy can continue sharing the bus location when the app is closed or the phone is locked.'
+        );
+        return;
+      }
+
+      // Only start the trip AFTER both permissions are granted.
+      await startTripAfterPermissions();
+    } catch (err) {
+      console.log("Location permission request failed:", err);
+      alert("Unable to enable location permission. Please try again.");
+    }
+  };
+
   const handleEndTrip = async () => {
     try {
       const token = await AsyncStorage.getItem("token");
@@ -516,6 +567,48 @@ export default function DriverScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#f5f6fa" }}>
+      <Modal
+        visible={showLocationDisclosure}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLocationDisclosure(false)}
+      >
+        <View style={styles.disclosureOverlay}>
+          <View style={styles.disclosureCard}>
+            <Text style={styles.disclosureTitle}>
+              Background location required
+            </Text>
+
+            <Text style={styles.disclosureText}>
+              Trackefy collects location data to enable real-time
+              school bus tracking for parents even when the app is
+              closed or not in use.
+            </Text>
+
+            <Text style={styles.disclosureSubText}>
+              Location is used during active trips so parents can
+              track the school bus in real time. To enable background
+              tracking, please select "Allow all the time".
+            </Text>
+
+            <View style={styles.disclosureButtons}>
+              <TouchableOpacity
+                style={styles.notNowButton}
+                onPress={() => setShowLocationDisclosure(false)}
+              >
+                <Text style={styles.notNowText}>Not Now</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.continueButton}
+                onPress={handleLocationDisclosureContinue}
+              >
+                <Text style={styles.continueText}>Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <View style={styles.container}>
         {/* HEADER */}
         <Text style={styles.header}>Hello,</Text>
@@ -755,4 +848,67 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
   },
+
+  disclosureOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    padding: 24,
+  },
+
+  disclosureCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 24,
+  },
+
+  disclosureTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#111827",
+    marginBottom: 16,
+  },
+
+  disclosureText: {
+    fontSize: 16,
+    color: "#374151",
+    lineHeight: 24,
+    marginBottom: 12,
+  },
+
+  disclosureSubText: {
+    fontSize: 14,
+    color: "#6b7280",
+    lineHeight: 21,
+    marginBottom: 24,
+  },
+
+  disclosureButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 12,
+  },
+
+  notNowButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+  },
+
+  notNowText: {
+    color: "#4b5563",
+    fontWeight: "600",
+  },
+
+  continueButton: {
+    backgroundColor: "#2563eb",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+
+  continueText: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
+
 });
