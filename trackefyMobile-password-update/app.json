@@ -1,0 +1,90 @@
+{
+  "expo": {
+    "name": "Trackefy",
+    "slug": "trackefy-mobile",
+    "version": "1.0.4",
+    "orientation": "portrait",
+    "icon": "./assets/appIcon.png",
+    "scheme": "trackefymobile",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "versionCode": 13,
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "POST_NOTIFICATIONS"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F7C928"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.trackefy.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCi7bhX4TEHZNBQXjNuM3u6MouyPaSV0yQ"
+        }
+      }
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "@react-native-firebase/app",
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Trackefy to access your location while a trip is active so parents can track the school bus.",
+          "locationWhenInUsePermission": "Allow Trackefy to access your location while using the app.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0"
+          }
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/logo.jpeg",
+          "imageWidth": 260,
+          "resizeMode": "contain",
+          "backgroundColor": "#F7C928",
+          "dark": {
+            "image": "./assets/logo.jpeg",
+            "backgroundColor": "#F7C928"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0b0b4cf5-e7ec-4f07-a1a3-562b9ed7afd4"
+      }
+    }
+  }
+}
