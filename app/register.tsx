@@ -1,117 +1,9 @@
-// import { View, Text, TouchableOpacity, StyleSheet, Linking } from "react-native";
-// import { useRouter } from "expo-router";
-
-// export default function RegisterInfoScreen() {
-//   const router = useRouter();
-
-//   const openWebsite = async () => {
-//     const url = "https://trackefy.in";
-
-//     const supported = await Linking.canOpenURL(url);
-
-//     if (supported) {
-//       await Linking.openURL(url);
-//     } else {
-//       alert("Unable to open website. Please visit trackefy.in manually.");
-//     }
-//   };
-
-//   return (
-//     <View style={styles.container}>
-//       <View style={styles.card}>
-//         <Text style={styles.icon}>🚌</Text>
-
-//         <Text style={styles.title}>Create Your Account</Text>
-
-//         <Text style={styles.message}>
-//           For creating a new Trackefy account, please visit our website and sign up there.
-//         </Text>
-
-//         <TouchableOpacity style={styles.websiteButton} onPress={openWebsite}>
-//           <Text style={styles.websiteButtonText}>Visit trackefy.in</Text>
-//         </TouchableOpacity>
-
-//         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-//           <Text style={styles.backButtonText}>Go Back</Text>
-//         </TouchableOpacity>
-//       </View>
-//     </View>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: "#F8FAFC",
-//     justifyContent: "center",
-//     padding: 22,
-//   },
-
-//   card: {
-//     backgroundColor: "#FFFFFF",
-//     borderRadius: 28,
-//     padding: 26,
-//     alignItems: "center",
-//     elevation: 5,
-//     shadowColor: "#000",
-//     shadowOpacity: 0.08,
-//     shadowRadius: 12,
-//     shadowOffset: { width: 0, height: 6 },
-//   },
-
-//   icon: {
-//     fontSize: 52,
-//     marginBottom: 14,
-//   },
-
-//   title: {
-//     fontSize: 28,
-//     fontWeight: "900",
-//     color: "#111827",
-//     textAlign: "center",
-//     marginBottom: 12,
-//   },
-
-//   message: {
-//     fontSize: 16,
-//     color: "#6B7280",
-//     textAlign: "center",
-//     lineHeight: 24,
-//     marginBottom: 26,
-//   },
-
-//   websiteButton: {
-//     width: "100%",
-//     backgroundColor: "#2563EB",
-//     paddingVertical: 16,
-//     borderRadius: 16,
-//     alignItems: "center",
-//     marginBottom: 14,
-//   },
-
-//   websiteButtonText: {
-//     color: "#FFFFFF",
-//     fontSize: 17,
-//     fontWeight: "800",
-//   },
-
-//   backButton: {
-//     paddingVertical: 10,
-//   },
-
-//   backButtonText: {
-//     color: "#2563EB",
-//     fontSize: 15,
-//     fontWeight: "700",
-//   },
-// });
-
 import { Ionicons } from "@expo/vector-icons";
 import axios, { isAxiosError } from "axios";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, SafeAreaView,
+  ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, SafeAreaView,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { BASE_URL } from "../constants/api";
@@ -148,6 +40,19 @@ export default function RegisterScreen() {
   const [otpTimer, setOtpTimer] = useState(0);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (otpTimer <= 0) return;
@@ -245,17 +150,31 @@ export default function RegisterScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            keyboardVisible && styles.contentKeyboardOpen,
+          ]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          showsVerticalScrollIndicator={false}
+        >
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={22} color="#1E293B" />
           </TouchableOpacity>
 
-          <View style={styles.header}>
-            <View style={styles.iconCircle}><Ionicons name="bus" size={30} color="#2563EB" /></View>
-            <Text style={styles.title}>Create your account</Text>
-            <Text style={styles.subtitle}>Join Trackefy to stay connected throughout every school trip.</Text>
-          </View>
+          {!keyboardVisible && (
+            <View style={styles.header}>
+              <View style={styles.iconCircle}><Ionicons name="bus" size={30} color="#2563EB" /></View>
+              <Text style={styles.title}>Create your account</Text>
+              <Text style={styles.subtitle}>Join Trackefy to stay connected throughout every school trip.</Text>
+            </View>
+          )}
 
           <View style={styles.roleSelector}>
             {(["parent", "driver"] as Role[]).map((item) => (
@@ -374,6 +293,7 @@ function PasswordField({ label, value, onChangeText, visible, onToggle, placehol
 const styles = StyleSheet.create({
   flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: "#F5F7FB" },
   content: { padding: 20, paddingTop: 18, paddingBottom: 42 },
+  contentKeyboardOpen: { paddingTop: 10, paddingBottom: 180 },
   backButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#E2E8F0" },
   header: { alignItems: "center", marginTop: 12, marginBottom: 22 },
   iconCircle: { width: 58, height: 58, borderRadius: 20, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center", marginBottom: 12 },

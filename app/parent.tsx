@@ -916,11 +916,17 @@ export default function ParentScreen() {
           <Text style={styles.buttonText}>Set Pickup Location</Text>
         </TouchableOpacity>
 
-        {isPickingLocation && (
-          <View style={styles.fullscreen}>
+        <Modal
+          visible={isPickingLocation}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setIsPickingLocation(false)}
+        >
+          <SafeAreaView style={styles.locationPicker} edges={["top", "bottom"]}>
+            <View style={styles.locationMapContainer}>
             <MapView
               provider="google"
-              style={{ flex: 1 }}
+              style={StyleSheet.absoluteFillObject}
               initialRegion={{
                 latitude: pickupLocation?.latitude || 26.1573,
                 longitude: pickupLocation?.longitude || 91.8173,
@@ -942,7 +948,20 @@ export default function ParentScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.confirmBtn}
+              style={styles.cancelBtn}
+              onPress={() => setIsPickingLocation(false)}
+            >
+              <Text style={{ color: "#fff", fontWeight: "600" }}>Cancel</Text>
+            </TouchableOpacity>
+            </View>
+
+            <View style={styles.locationFooter}>
+              <Text style={styles.locationHint}>
+                Tap the map to place the pickup marker.
+              </Text>
+              <TouchableOpacity
+              style={[styles.confirmBtn, !tempLocation && styles.confirmBtnDisabled]}
+              disabled={!tempLocation}
               onPress={async () => {
                 if (!tempLocation) return alert("Select location");
 
@@ -972,15 +991,9 @@ export default function ParentScreen() {
                 Confirm Location
               </Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setIsPickingLocation(false)}
-            >
-              <Text style={{ color: "#fff" }}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+            </View>
+          </SafeAreaView>
+        </Modal>
 
         <Modal
           visible={detailsOpen}
@@ -1070,37 +1083,58 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   buttonText: { color: "#fff", fontWeight: "bold" },
-  fullscreen: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
+  locationPicker: {
+    flex: 1,
     backgroundColor: "#fff",
-    zIndex: 100,
+  },
+  locationMapContainer: {
+    flex: 1,
+    minHeight: 0,
   },
   useCurrentBtn: {
     position: "absolute",
-    top: 50,
-    left: 20,
+    top: 16,
+    left: 16,
     backgroundColor: "#2563eb",
-    padding: 10,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 10,
+    elevation: 4,
+  },
+  locationFooter: {
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#d1d5db",
+    elevation: 10,
+  },
+  locationHint: {
+    color: "#4b5563",
+    fontSize: 13,
+    textAlign: "center",
+    marginBottom: 9,
   },
   confirmBtn: {
-    position: "absolute",
-    bottom: 40,
-    left: 20,
-    right: 20,
     backgroundColor: "#2563eb",
-    padding: 15,
-    borderRadius: 10,
+    minHeight: 52,
+    borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmBtnDisabled: {
+    backgroundColor: "#93b4f5",
   },
   cancelBtn: {
     position: "absolute",
-    top: 50,
-    right: 20,
+    top: 16,
+    right: 16,
     backgroundColor: "#ef4444",
-    padding: 10,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 10,
+    elevation: 4,
   },
   logoutBtn: {
     position: "absolute",
