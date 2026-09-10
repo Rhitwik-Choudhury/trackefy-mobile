@@ -753,10 +753,14 @@ export default function ParentScreen() {
     };
   }, []);
 
+  // Google Places accepts session tokens up to 36 characters. This UUID-shaped
+  // token is exactly 36 characters and is unique for each search session.
   const createPlaceSessionToken = () =>
-    `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random()
-      .toString(36)
-      .slice(2)}`;
+    "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+      const random = Math.floor(Math.random() * 16);
+      const value = character === "x" ? random : (random & 0x3) | 0x8;
+      return value.toString(16);
+    });
 
   const openLocationPicker = () => {
     placeSessionTokenRef.current = createPlaceSessionToken();
