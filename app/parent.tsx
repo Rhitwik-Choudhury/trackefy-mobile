@@ -1,6 +1,22 @@
 // import "../firebase";
 import notifee from '@notifee/react-native';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Linking, BackHandler, Dimensions, ScrollView} from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  Modal,
+  Linking,
+  BackHandler,
+  Dimensions,
+  ScrollView,
+  TextInput,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -18,6 +34,13 @@ const MAP_HEIGHT = SCREEN_HEIGHT * 0.60;
 type MapCoordinate = {
   latitude: number;
   longitude: number;
+};
+
+type PlaceSuggestion = {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+  fullText: string;
 };
 
 const getDistanceBetweenCoordinates = (
@@ -124,12 +147,23 @@ export default function ParentScreen() {
 
   const [isPickingLocation, setIsPickingLocation] = useState(false);
   const [tempLocation, setTempLocation] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+  const [isSelectingPlace, setIsSelectingPlace] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [selectedAddress, setSelectedAddress] = useState("");
 
   const [isAutoFollow, setIsAutoFollow] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const mapRef = useRef<any>(null);
+  const pickerMapRef = useRef<any>(null);
+  const searchRequestRef = useRef<AbortController | null>(null);
+  const placeSessionTokenRef = useRef("");
+  const pickupSearchBiasRef = useRef<any>(null);
+  const skipNextAutocompleteRef = useRef(false);
   
   const markerAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -715,8 +749,141 @@ export default function ParentScreen() {
         clearInterval(markerAnimationRef.current);
         markerAnimationRef.current = null;
       }
+      searchRequestRef.current?.abort();
     };
   }, []);
+
+  const createPlaceSessionToken = () =>
+    `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+
+  const openLocationPicker = () => {
+    placeSessionTokenRef.current = createPlaceSessionToken();
+    pickupSearchBiasRef.current = pickupLocation || null;
+    setTempLocation(pickupLocation || null);
+    setSearchQuery("");
+    setPlaceSuggestions([]);
+    setSearchError("");
+    setSelectedAddress("");
+    setIsPickingLocation(true);
+  };
+
+  const closeLocationPicker = () => {
+    searchRequestRef.current?.abort();
+    setIsSearchingPlaces(false);
+    setIsSelectingPlace(false);
+    setPlaceSuggestions([]);
+    setSearchError("");
+    setIsPickingLocation(false);
+  };
+
+  useEffect(() => {
+    if (!isPickingLocation) return;
+
+    if (skipNextAutocompleteRef.current) {
+      skipNextAutocompleteRef.current = false;
+      return;
+    }
+
+    const query = searchQuery.trim();
+    if (query.length < 3) {
+      searchRequestRef.current?.abort();
+      setPlaceSuggestions([]);
+      setSearchError("");
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    const debounceTimer = setTimeout(async () => {
+      searchRequestRef.current?.abort();
+      const controller = new AbortController();
+      searchRequestRef.current = controller;
+      setIsSearchingPlaces(true);
+      setSearchError("");
+
+      try {
+        const token = await AsyncStorage.getItem("token");
+        const biasLocation = pickupSearchBiasRef.current;
+        const response = await fetch(`${BASE_URL}/places/autocomplete`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            input: query,
+            sessionToken: placeSessionTokenRef.current,
+            locationBias: biasLocation
+              ? {
+                  latitude: biasLocation.latitude,
+                  longitude: biasLocation.longitude,
+                }
+              : undefined,
+          }),
+          signal: controller.signal,
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.message || "Unable to search locations");
+        }
+
+        setPlaceSuggestions(data.suggestions || []);
+      } catch (error: any) {
+        if (error?.name !== "AbortError") {
+          setPlaceSuggestions([]);
+          setSearchError(error?.message || "Unable to search locations");
+        }
+      } finally {
+        if (searchRequestRef.current === controller) {
+          setIsSearchingPlaces(false);
+        }
+      }
+    }, 350);
+
+    return () => clearTimeout(debounceTimer);
+  }, [searchQuery, isPickingLocation]);
+
+  const selectPlace = async (suggestion: PlaceSuggestion) => {
+    setIsSelectingPlace(true);
+    setSearchError("");
+
+    try {
+      const token = await AsyncStorage.getItem("token");
+      const response = await fetch(
+        `${BASE_URL}/places/${encodeURIComponent(suggestion.placeId)}?sessionToken=${encodeURIComponent(
+          placeSessionTokenRef.current
+        )}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const data = await response.json();
+      if (!response.ok || !data?.location) {
+        throw new Error(data?.message || "Unable to open this location");
+      }
+
+      const coordinate = {
+        latitude: data.location.latitude,
+        longitude: data.location.longitude,
+      };
+
+      setTempLocation(coordinate);
+      setSelectedAddress(data.formattedAddress || suggestion.fullText);
+      skipNextAutocompleteRef.current = true;
+      setSearchQuery(suggestion.fullText);
+      setPlaceSuggestions([]);
+      pickerMapRef.current?.animateToRegion(
+        { ...coordinate, latitudeDelta: 0.006, longitudeDelta: 0.006 },
+        450
+      );
+      placeSessionTokenRef.current = createPlaceSessionToken();
+    } catch (error: any) {
+      setSearchError(error?.message || "Unable to open this location");
+    } finally {
+      setIsSelectingPlace(false);
+    }
+  };
 
   // ================= CURRENT LOCATION =================
   const useCurrentLocation = async () => {
@@ -729,10 +896,19 @@ export default function ParentScreen() {
 
     const location = await Location.getCurrentPositionAsync({});
 
-    setTempLocation({
+    const coordinate = {
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
-    });
+    };
+
+    pickupSearchBiasRef.current = coordinate;
+    setTempLocation(coordinate);
+    setSelectedAddress("Current location");
+    setPlaceSuggestions([]);
+    pickerMapRef.current?.animateToRegion(
+      { ...coordinate, latitudeDelta: 0.006, longitudeDelta: 0.006 },
+      450
+    );
   };
 
   const getStatusText = () => {
@@ -911,7 +1087,7 @@ export default function ParentScreen() {
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() => setIsPickingLocation(true)}
+          onPress={openLocationPicker}
         >
           <Text style={styles.buttonText}>Set Pickup Location</Text>
         </TouchableOpacity>
@@ -920,12 +1096,17 @@ export default function ParentScreen() {
           visible={isPickingLocation}
           animationType="slide"
           presentationStyle="fullScreen"
-          onRequestClose={() => setIsPickingLocation(false)}
+          onRequestClose={closeLocationPicker}
         >
           <SafeAreaView style={styles.locationPicker} edges={["top", "bottom"]}>
+            <KeyboardAvoidingView
+              style={styles.locationPicker}
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+            >
             <View style={styles.locationMapContainer}>
             <MapView
               provider="google"
+              ref={pickerMapRef}
               style={StyleSheet.absoluteFillObject}
               initialRegion={{
                 latitude: pickupLocation?.latitude || 26.1573,
@@ -933,12 +1114,81 @@ export default function ParentScreen() {
                 latitudeDelta: 0.01,
                 longitudeDelta: 0.01,
               }}
-              onPress={(e) => setTempLocation(e.nativeEvent.coordinate)}
+              onPress={(e) => {
+                pickupSearchBiasRef.current = e.nativeEvent.coordinate;
+                setTempLocation(e.nativeEvent.coordinate);
+                setSelectedAddress("");
+                setPlaceSuggestions([]);
+              }}
             >
               {tempLocation && (
                 <Marker coordinate={tempLocation} pinColor="green" />
               )}
             </MapView>
+
+            <View style={styles.searchArea}>
+              <View style={styles.searchBox}>
+                <Ionicons name="search" size={21} color="#64748b" />
+                <TextInput
+                  style={styles.searchInput}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search area, street or landmark"
+                  placeholderTextColor="#94a3b8"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+                {(isSearchingPlaces || isSelectingPlace) && (
+                  <ActivityIndicator size="small" color="#2563eb" />
+                )}
+                {!!searchQuery && !isSearchingPlaces && !isSelectingPlace && (
+                  <TouchableOpacity
+                    accessibilityLabel="Clear location search"
+                    onPress={() => {
+                      setSearchQuery("");
+                      setPlaceSuggestions([]);
+                      setSearchError("");
+                    }}
+                  >
+                    <Ionicons name="close-circle" size={21} color="#94a3b8" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {(placeSuggestions.length > 0 || searchError) && (
+                <View style={styles.searchResults}>
+                  {!!searchError && (
+                    <Text style={styles.searchError}>{searchError}</Text>
+                  )}
+                  {placeSuggestions.map((suggestion, index) => (
+                    <TouchableOpacity
+                      key={suggestion.placeId}
+                      style={[
+                        styles.suggestionRow,
+                        index < placeSuggestions.length - 1 &&
+                          styles.suggestionDivider,
+                      ]}
+                      onPress={() => selectPlace(suggestion)}
+                    >
+                      <View style={styles.suggestionIcon}>
+                        <Ionicons name="location-outline" size={20} color="#2563eb" />
+                      </View>
+                      <View style={styles.suggestionTextWrap}>
+                        <Text style={styles.suggestionTitle} numberOfLines={1}>
+                          {suggestion.mainText}
+                        </Text>
+                        {!!suggestion.secondaryText && (
+                          <Text style={styles.suggestionSubtitle} numberOfLines={2}>
+                            {suggestion.secondaryText}
+                          </Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                  <Text style={styles.googleAttribution}>Powered by Google</Text>
+                </View>
+              )}
+            </View>
 
             <TouchableOpacity
               style={styles.useCurrentBtn}
@@ -949,7 +1199,7 @@ export default function ParentScreen() {
 
             <TouchableOpacity
               style={styles.cancelBtn}
-              onPress={() => setIsPickingLocation(false)}
+              onPress={closeLocationPicker}
             >
               <Text style={{ color: "#fff", fontWeight: "600" }}>Cancel</Text>
             </TouchableOpacity>
@@ -957,7 +1207,7 @@ export default function ParentScreen() {
 
             <View style={styles.locationFooter}>
               <Text style={styles.locationHint}>
-                Tap the map to place the pickup marker.
+                {selectedAddress || "Search above or tap the map to place the pickup marker."}
               </Text>
               <TouchableOpacity
               style={[styles.confirmBtn, !tempLocation && styles.confirmBtnDisabled]}
@@ -983,7 +1233,7 @@ export default function ParentScreen() {
                 );
 
                 setPickupLocation(tempLocation);
-                setIsPickingLocation(false);
+                closeLocationPicker();
                 alert("Saved ✅");
               }}
             >
@@ -992,6 +1242,7 @@ export default function ParentScreen() {
               </Text>
             </TouchableOpacity>
             </View>
+            </KeyboardAvoidingView>
           </SafeAreaView>
         </Modal>
 
@@ -1091,9 +1342,96 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
   },
-  useCurrentBtn: {
+  searchArea: {
     position: "absolute",
     top: 16,
+    left: 16,
+    right: 16,
+    zIndex: 20,
+  },
+  searchBox: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  searchInput: {
+    flex: 1,
+    color: "#0f172a",
+    fontSize: 16,
+    paddingVertical: 13,
+  },
+  searchResults: {
+    marginTop: 8,
+    maxHeight: 310,
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  suggestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  suggestionDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#e2e8f0",
+  },
+  suggestionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#eff6ff",
+    marginRight: 12,
+  },
+  suggestionTextWrap: {
+    flex: 1,
+  },
+  suggestionTitle: {
+    color: "#0f172a",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  suggestionSubtitle: {
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  searchError: {
+    color: "#b91c1c",
+    fontSize: 13,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  googleAttribution: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "right",
+    paddingHorizontal: 14,
+    paddingTop: 7,
+    paddingBottom: 9,
+  },
+  useCurrentBtn: {
+    position: "absolute",
+    top: 82,
     left: 16,
     backgroundColor: "#2563eb",
     paddingHorizontal: 14,
@@ -1128,7 +1466,7 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     position: "absolute",
-    top: 16,
+    top: 82,
     right: 16,
     backgroundColor: "#ef4444",
     paddingHorizontal: 16,
