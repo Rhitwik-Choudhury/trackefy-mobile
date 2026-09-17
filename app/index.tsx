@@ -27,7 +27,7 @@ export default function Login() {
     };
 
     checkLogin();
-  }, []);
+  }, [router]);
 
   const handleLogin = async () => {
     try {

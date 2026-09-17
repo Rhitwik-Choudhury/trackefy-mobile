@@ -1,6 +1,2 @@
-// export const BASE_URL = "https://kidharhaibus-backend-production.up.railway.app";
-const LOCAL = "http://192.168.29.190:5000/api";
-const PROD = "https://api.trackefy.in/api";
-
-// 👇 switch here
-export const BASE_URL = PROD;
+// Only the public backend URL belongs in the mobile bundle. Google Routes keys stay on the server.
+export const BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://api.trackefy.in/api').replace(/\/$/, '');

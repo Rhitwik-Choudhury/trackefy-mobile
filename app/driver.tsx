@@ -1,12 +1,13 @@
-import { View, Text, TouchableOpacity, StyleSheet, Linking, BackHandler, Modal } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Linking, BackHandler, Modal, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import socket from "../services/socket";
 import { BASE_URL } from "../constants/api";
+import DriverRoutePanel, { StartOptions, EndOptions } from '../components/routes/DriverRoutePanel';
 
 const BACKGROUND_LOCATION_TASK = "TRACKefy_DRIVER_BACKGROUND_LOCATION";
 
@@ -71,6 +72,10 @@ const getFilteredDriverLocation = async (
   }
 
   const current = {
+    accuracy,
+    speed: typeof coords.speed === 'number' && coords.speed >= 0 ? coords.speed : null,
+    heading: typeof coords.heading === 'number' && coords.heading >= 0 ? coords.heading : null,
+    deviceTimestamp: typeof locationTimestamp === 'number' ? locationTimestamp : Date.now(),
     lat: latitude,
     lng: longitude,
     timestamp:
@@ -172,7 +177,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
 
   try {
     const locations = data?.locations;
-    const location = locations?.[0];
+    const location = locations?.[locations.length - 1];
 
     if (!location) return;
 
@@ -199,8 +204,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          lat: filteredLocation.lat,
-          lng: filteredLocation.lng,
+          ...filteredLocation,
         }),
       }
     );
@@ -242,19 +246,10 @@ export default function DriverScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
   const locationWatcher = useRef<any>(null);
+  const pendingStart = useRef<StartOptions>({ direction: 'TO_SCHOOL' });
   const isOnTrip = driverData?.isOnTrip;
 
-  useEffect(() => {
-    fetchDriver();
-  }, []);
-
-  useEffect(() => {
-    if (driverData?.isOnTrip) {
-      startTracking(driverData);
-    }
-  }, [driverData?.isOnTrip]);
-
-  const fetchDriver = async () => {
+  const fetchDriver = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem("token");
 
@@ -281,10 +276,10 @@ export default function DriverScreen() {
       await AsyncStorage.multiRemove(["token", "role", "parentData"]);
       router.replace("/");
     }
-  };
+  }, [router]);
 
   // ✅ START TRACKING ONLY WHEN TRIP STARTS
-  const startTracking = async (driver: any) => {
+  const startTracking = useCallback(async (driver: any) => {
     if (locationWatcher.current) {
       return;
     }
@@ -297,7 +292,7 @@ export default function DriverScreen() {
         distanceInterval: 3,
       },
       async (location) => {
-        const currentDriver = driverData || driver;
+        const currentDriver = driver;
 
         if (!currentDriver?.busId) return;
 
@@ -325,8 +320,7 @@ export default function DriverScreen() {
                 Authorization: `Bearer ${token}`,
               },
               body: JSON.stringify({
-                lat: filteredLocation.lat,
-                lng: filteredLocation.lng,
+                ...filteredLocation,
               }),
             });
 
@@ -391,7 +385,18 @@ export default function DriverScreen() {
     }
 
     console.log("✅ Foreground + background tracking started");
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchDriver();
+  }, [fetchDriver]);
+
+  useEffect(() => {
+    if (isOnTrip && driverData) {
+      startTracking(driverData).catch(() => alert('Unable to resume tracking. Check location permissions.'));
+    }
+    return () => { locationWatcher.current?.remove(); locationWatcher.current = null; };
+  }, [isOnTrip, driverData, startTracking]);
 
   const stopTracking = async () => {
     if (locationWatcher.current) {
@@ -416,15 +421,11 @@ export default function DriverScreen() {
 
       const token = await AsyncStorage.getItem("token");
 
-      const startResponse = await fetch(
-        `${BASE_URL}/driver/start-trip`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const gps = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const startResponse = await fetch(`${BASE_URL}/driver/start-trip`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...pendingStart.current, location: { lat: gps.coords.latitude, lng: gps.coords.longitude } }),
+      });
 
       if (!startResponse.ok) {
         const errorText = await startResponse.text();
@@ -434,7 +435,9 @@ export default function DriverScreen() {
           response: errorText,
         });
 
-        alert("Unable to start the trip. Please try again.");
+        let message = 'Unable to start the trip. Please try again.';
+        try { message = JSON.parse(errorText).message || message; } catch {}
+        alert(message);
         return;
       }
 
@@ -527,19 +530,13 @@ export default function DriverScreen() {
     }
   };
 
-  const handleEndTrip = async () => {
+  const handleEndTrip = async (options: EndOptions = {}) => {
     try {
       const token = await AsyncStorage.getItem("token");
 
-      const endResponse = await fetch(
-        `${BASE_URL}/driver/end-trip`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const endResponse = await fetch(`${BASE_URL}/driver/end-trip`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(options),
+      });
 
       if (!endResponse.ok) {
         const errorText = await endResponse.text();
@@ -590,7 +587,7 @@ export default function DriverScreen() {
               schools can track the school bus in real time. To enable
               background tracking, please select{" "}
               <Text style={styles.permissionHighlight}>
-                "Allow all the time"
+                {"\"Allow all the time\""}
               </Text>{" "}
               when Android shows the location access options.
             </Text>
@@ -613,7 +610,7 @@ export default function DriverScreen() {
           </View>
         </View>
       </Modal>
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container}>
         {/* HEADER */}
         <Text style={styles.header}>Hello,</Text>
         <Text style={styles.name}>{driverData?.fullName || "Driver"}</Text>
@@ -642,16 +639,7 @@ export default function DriverScreen() {
           </View>
         </View>
 
-        {/* BUTTON */}
-        {isOnTrip ? (
-          <TouchableOpacity style={styles.endButton} onPress={handleEndTrip}>
-            <Text style={styles.buttonText}>End Trip</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.startButton} onPress={handleStartTrip}>
-            <Text style={styles.buttonText}>Start Trip</Text>
-          </TouchableOpacity>
-        )}
+        <DriverRoutePanel active={!!isOnTrip} onStart={async options => { pendingStart.current = options; await handleStartTrip(); }} onEnd={handleEndTrip} />
 
         {/* MENU */}
         <View style={styles.menuWrapper}>
@@ -714,6 +702,8 @@ export default function DriverScreen() {
                 style={styles.dropdownItem}
                 onPress={async () => {
                   setMenuOpen(false);
+                  if (isOnTrip) { alert('End the active trip before logging out.'); return; }
+                  socket.disconnect();
                   await AsyncStorage.multiRemove(["token", "role", "parentData"]);
                   router.replace("/");
                 }}
@@ -725,14 +715,14 @@ export default function DriverScreen() {
             </View>
           )}
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     padding: 20,
     backgroundColor: "#f5f6fa",
   },

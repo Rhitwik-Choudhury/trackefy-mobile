@@ -18,10 +18,13 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import socket from "../services/socket";
+import { useParentRoute } from '../hooks/use-parent-route';
+import ParentEtaCard from '../components/routes/ParentEtaCard';
+import { decodeRoute, mapCoordinate, routeRequest } from '../services/routes';
 import MapView, { Marker, Polyline } from "react-native-maps";
 import * as Location from 'expo-location';
 import { BASE_URL } from "../constants/api";
@@ -137,6 +140,10 @@ export default function ParentScreen() {
     return () => subscription.remove();
   }, []);
 
+  const [selectedChildId, setSelectedChildId] = useState('');
+  const [linkCode, setLinkCode] = useState('');
+  const [submittingPickup, setSubmittingPickup] = useState(false);
+  const [selectedPlaceId, setSelectedPlaceId] = useState('');
   const [parentData, setParentData] = useState<any>(null);
   const [busLocation, setBusLocation] = useState<any>(null);
   const [animatedLocation, setAnimatedLocation] = useState<any>(null);
@@ -172,18 +179,15 @@ export default function ParentScreen() {
     longitude: number;
   } | null>(null);
   const lastLocationTimestampRef = useRef<number>(0);
-  const pollingInProgressRef = useRef(false);
   const hasReceivedFreshLocationRef = useRef(false);
   const lastHeadingLocationRef = useRef<MapCoordinate | null>(null);
   const busHeadingRef = useRef(0);
 
   const parent = parentData;
 
-  const child =
-    parent?.children && parent.children.length > 0
-      ? parent.children[0]
-      : null;
-
+  const child = parent?.children?.find((item: any) => item._id === selectedChildId) || parent?.children?.[0] || null;
+  const route = useParentRoute(child?._id);
+  const completedPath = useMemo(() => decodeRoute(route.trip?.completedPolyline), [route.trip?.completedPolyline]);
   const bus = child?.busId || null;
 
   const driver = bus?.driverId || null;
@@ -342,28 +346,6 @@ export default function ParentScreen() {
       }, 500);
     }
 
-    // ✅ Load saved pickup location if backend sends it
-    if (
-      parent?.pickupLocation?.coordinates &&
-      parent.pickupLocation.coordinates.length === 2
-    ) {
-      setPickupLocation({
-        latitude: parent.pickupLocation.coordinates[1],
-        longitude: parent.pickupLocation.coordinates[0],
-      });
-    }
-
-    // ✅ If your backend still sends stopLocation instead of pickupLocation
-    if (
-      parent?.stopLocation &&
-      parent.stopLocation.lat !== undefined &&
-      parent.stopLocation.lng !== undefined
-    ) {
-      setPickupLocation({
-        latitude: parent.stopLocation.lat,
-        longitude: parent.stopLocation.lng,
-      });
-    }
   };
 
   // ================= FETCH =================
@@ -399,7 +381,7 @@ export default function ParentScreen() {
     };
 
     loadParent();
-  }, []);
+  }, [router]);
 
   // ================= SMOOTH BUS MARKER MOVEMENT =================
   const moveBusMarker = (newCoord: {
@@ -567,168 +549,29 @@ export default function ParentScreen() {
     updateBusHeading(newCoord);
     moveBusMarker(newCoord);
 
-    setPath((previousPath) => {
-      // The first fresh update after opening becomes the
-      // beginning of the visible path.
-      if (!hasReceivedFreshLocationRef.current) {
-        hasReceivedFreshLocationRef.current = true;
-        return [newCoord];
-      }
-
-      const previousPoint =
-        previousPath.length > 0
-          ? previousPath[previousPath.length - 1]
-          : null;
-
-      // Avoid adding effectively identical points.
-      if (
-        previousPoint &&
-        Math.abs(previousPoint.latitude - newCoord.latitude) < 0.000001 &&
-        Math.abs(previousPoint.longitude - newCoord.longitude) < 0.000001
-      ) {
-        return previousPath;
-      }
-
-      return [...previousPath, newCoord].slice(-100);
-    });
   };
-  
-  // ================= SOCKET =================
+
+  // Every route response is scoped to the selected child, including polling fallback.
   useEffect(() => {
-    if (!bus?._id) return;
-
-    const joinRoom = () => {
-      console.log("🚌 Joining bus room:", bus._id);
-      socket.emit("joinBusRoom", { busId: bus._id });
-    };
-
-    if (socket.connected) {
-      joinRoom();
-    } else {
-      socket.connect();
-    }
-
-    socket.on("connect", joinRoom);
-
-    const handleLocationUpdate = (data: any) => {
-      processLocationUpdate(
-        data.lat,
-        data.lng,
-        data.lastLocationUpdatedAt
-      );
-
-      setTripStatus("started");
-    };
-
-    // ✅ Normal foreground socket update
-    socket.on("location-update", handleLocationUpdate);
-
-    socket.on("tripStatus", (data) => {
-      setTripStatus(data.status);
-
-      if (data.status === "started") {
-        hasReceivedFreshLocationRef.current = false;
-        setPath([]);
-
-        lastHeadingLocationRef.current = null;
-        busHeadingRef.current = 0;
-        setBusHeading(0);
-
-        if (markerAnimationRef.current) {
-          clearInterval(markerAnimationRef.current);
-          markerAnimationRef.current = null;
-        }
-      }
-
-      if (data.status === "ended") {
-        hasReceivedFreshLocationRef.current = false;
-      }
-    });
-
-    socket.on("alert", (data) => {
-      alert(data.message);
-    });
-
-    return () => {
-      socket.off("connect", joinRoom);
-      socket.off("location-update", handleLocationUpdate);
-      socket.off("tripStatus");
-      socket.off("alert");
-    };
-  }, [bus?._id]);
-
-  // ================= POLLING FALLBACK =================
+    displayedLocationRef.current = null;
+    lastLocationTimestampRef.current = 0;
+    lastHeadingLocationRef.current = null;
+    if (markerAnimationRef.current) clearInterval(markerAnimationRef.current);
+    setAnimatedLocation(null); setBusLocation(null); setPath([]); setPickupLocation(null);
+    setTripStatus('idle');
+  }, [child?._id]);
   useEffect(() => {
-    if (!bus?._id) return;
-
-    let isCancelled = false;
-
-    const fetchLatestBusLocation = async () => {
-      if (pollingInProgressRef.current) return;
-
-      pollingInProgressRef.current = true;
-
-      try {
-        const token = await AsyncStorage.getItem("token");
-
-        if (!token) return;
-
-        const response = await fetch(`${BASE_URL}/parent/my-bus`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          console.log(
-            "Bus-location polling failed with status:",
-            response.status
-          );
-          return;
-        }
-
-        const data = await response.json();
-        const latestBus = data?.bus;
-
-        if (isCancelled || !latestBus) return;
-
-        if (latestBus.tripStatus) {
-          setTripStatus(latestBus.tripStatus);
-        }
-
-        const latestLocation = latestBus.currentLocation;
-
-        if (
-          latestLocation?.lat !== undefined &&
-          latestLocation?.lng !== undefined
-        ) {
-          processLocationUpdate(
-            latestLocation.lat,
-            latestLocation.lng,
-            latestBus.lastLocationUpdatedAt
-          );
-        }
-      } catch (error) {
-        console.log("Bus-location polling error:", error);
-      } finally {
-        pollingInProgressRef.current = false;
-      }
-    };
-
-    // Sync immediately when the bus becomes available.
-    fetchLatestBusLocation();
-
-    const pollingInterval = setInterval(
-      fetchLatestBusLocation,
-      8000
-    );
-
-    return () => {
-      isCancelled = true;
-      clearInterval(pollingInterval);
-      pollingInProgressRef.current = false;
-    };
-  }, [bus?._id]);
+    const trip = route.trip;
+    if (trip && trip.studentId !== child?._id) return;
+    setTripStatus(trip?.status === 'active' ? 'started' : 'idle');
+    setPath(decodeRoute(trip?.remainingPolyline));
+    if (trip?.currentLocation) processLocationUpdate(trip.currentLocation.lat, trip.currentLocation.lng, trip.lastLocationUpdatedAt);
+    const approved = trip?.personal?.approvedStop?.location || route.pickup?.approved?.location;
+    setPickupLocation(approved ? mapCoordinate(approved) : null);
+    // processLocationUpdate intentionally stays outside the dependency list: it
+    // writes refs/state only, and recreating it would replay each socket update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.trip, route.pickup, child?._id]);
 
   // ================= AUTO FOLLOW =================
   useEffect(() => {
@@ -770,6 +613,7 @@ export default function ParentScreen() {
     setPlaceSuggestions([]);
     setSearchError("");
     setSelectedAddress("");
+    setSelectedPlaceId("");
     setIsPickingLocation(true);
   };
 
@@ -874,6 +718,7 @@ export default function ParentScreen() {
 
       setTempLocation(coordinate);
       setSelectedAddress(data.formattedAddress || suggestion.fullText);
+      setSelectedPlaceId(data.placeId || suggestion.placeId);
       skipNextAutocompleteRef.current = true;
       setSearchQuery(suggestion.fullText);
       setPlaceSuggestions([]);
@@ -908,6 +753,7 @@ export default function ParentScreen() {
     pickupSearchBiasRef.current = coordinate;
     setTempLocation(coordinate);
     setSelectedAddress("Current location");
+    setSelectedPlaceId("");
     setPlaceSuggestions([]);
     pickerMapRef.current?.animateToRegion(
       { ...coordinate, latitudeDelta: 0.006, longitudeDelta: 0.006 },
@@ -1009,6 +855,7 @@ export default function ParentScreen() {
                 style={styles.dropdownItem}
                 onPress={async () => {
                   setMenuOpen(false);
+                  socket.disconnect();
                   await AsyncStorage.multiRemove(["token", "role", "parentData"]);
                   router.replace("/");
                 }}
@@ -1021,6 +868,11 @@ export default function ParentScreen() {
           )}
         </View>
 
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+          {(parent?.children || []).map((item: any) => <TouchableOpacity key={item._id} accessibilityRole="button" onPress={() => setSelectedChildId(item._id)} style={{ padding: 12, borderRadius: 10, marginRight: 8, backgroundColor: child?._id === item._id ? '#dbeafe' : '#fff' }}><Text style={{ color: '#1d4ed8', fontWeight: '600' }}>{item.name}</Text><Text>{item.busId?.busNumber || 'No bus assigned'}</Text></TouchableOpacity>)}
+        </ScrollView>
+        <ParentEtaCard trip={route.trip} pickup={route.pickup} connected={route.connected} error={route.error} onRequest={openLocationPicker} onRefresh={route.refresh} />
+        {!child && <View style={styles.infoCard}><Text>Link your child with the student code supplied by the school.</Text><TextInput accessibilityLabel="Student code" placeholder="Student code" value={linkCode} onChangeText={setLinkCode} autoCapitalize="characters" /><TouchableOpacity onPress={async () => { try { await routeRequest('/parent/children', { studentCode: linkCode }); const profile = await routeRequest('/parent/me'); setParentData(profile.parent); } catch (e) { alert(e instanceof Error ? e.message : 'Unable to link child'); } }}><Text>Link child</Text></TouchableOpacity></View>}
         <View style={styles.statusCardNew}>
           <Text style={styles.statusLabel}>Trip Status</Text>
           <Text style={styles.statusValue}>{getStatusText()}</Text>
@@ -1062,6 +914,9 @@ export default function ParentScreen() {
             </Marker>
           )}
 
+            {completedPath.length > 0 && <Polyline coordinates={completedPath} strokeWidth={4} strokeColor="#94a3b8" />}
+            {route.trip?.schoolLocation && <Marker coordinate={mapCoordinate(route.trip.schoolLocation)} title="School" pinColor="blue" />}
+            {route.pickup?.request?.status === 'pending' && <Marker coordinate={mapCoordinate(route.pickup.request.requestedLocation)} title="Requested pickup · awaiting school review" pinColor="orange" />}
             {path.length > 0 && (
               <Polyline coordinates={path} strokeWidth={4} strokeColor="#2563eb" />
             )}
@@ -1122,6 +977,7 @@ export default function ParentScreen() {
                 pickupSearchBiasRef.current = e.nativeEvent.coordinate;
                 setTempLocation(e.nativeEvent.coordinate);
                 setSelectedAddress("");
+    setSelectedPlaceId("");
                 setPlaceSuggestions([]);
               }}
             >
@@ -1215,34 +1071,20 @@ export default function ParentScreen() {
               </Text>
               <TouchableOpacity
               style={[styles.confirmBtn, !tempLocation && styles.confirmBtnDisabled]}
-              disabled={!tempLocation}
+              disabled={!tempLocation || submittingPickup || !child}
               onPress={async () => {
-                if (!tempLocation) return alert("Select location");
-
-                const token = await AsyncStorage.getItem("token");
-
-                await fetch(
-                  `${BASE_URL}/parent/set-pickup-location`,
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({
-                      lat: tempLocation.latitude,
-                      lng: tempLocation.longitude,
-                    }),
-                  }
-                );
-
-                setPickupLocation(tempLocation);
-                closeLocationPicker();
-                alert("Saved ✅");
+                if (!tempLocation || !child || submittingPickup) return;
+                setSubmittingPickup(true);
+                try {
+                  await routeRequest(`/parent/pickup-request/${child._id}`, { requestedLocation: { lat: tempLocation.latitude, lng: tempLocation.longitude }, formattedAddress: selectedAddress, placeId: selectedPlaceId });
+                  await route.refresh(); closeLocationPicker();
+                  alert('Pending school review. Your current approved pickup point remains unchanged.');
+                } catch (e) { setSearchError(e instanceof Error ? e.message : 'Unable to submit pickup location'); }
+                finally { setSubmittingPickup(false); }
               }}
             >
               <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                Confirm Location
+                {submittingPickup ? 'Submitting…' : 'Submit for school review'}
               </Text>
             </TouchableOpacity>
             </View>

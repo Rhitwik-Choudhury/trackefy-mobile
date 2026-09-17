@@ -1,28 +1,10 @@
-import { io } from "socket.io-client";
-
-const socket = io(
-  "https://api.trackefy.in",
-  {
-    path: "/socket.io",
-    transports: ["websocket", "polling"],
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
-    timeout: 10000,
-    autoConnect: true,
-  }
-);
-
-socket.on("connect", () => {
-  console.log("✅ Socket connected:", socket.id);
+import { io } from 'socket.io-client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BASE_URL } from '../constants/api';
+const socket = io(BASE_URL.replace(/\/api\/?$/, ''), {
+  path: '/socket.io', transports: ['websocket', 'polling'],
+  auth: callback => { AsyncStorage.getItem('token').then(token => callback({ token: token || '' })).catch(() => callback({ token: '' })); },
+  autoConnect: false, reconnection: true, reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000, reconnectionDelayMax: 10000, timeout: 10000,
 });
-
-socket.on("disconnect", (reason) => {
-  console.log("❌ Socket disconnected:", reason);
-});
-
-socket.on("connect_error", (err) => {
-  console.log("⚠️ Socket connect error:", err.message);
-});
-
 export default socket;
