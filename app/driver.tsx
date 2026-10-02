@@ -8,6 +8,7 @@ import * as TaskManager from "expo-task-manager";
 import socket from "../services/socket";
 import { BASE_URL } from "../constants/api";
 import DriverRoutePanel, { StartOptions, EndOptions } from '../components/routes/DriverRoutePanel';
+import { registerDriverReminders, cancelDriverReminder } from '../services/driver-reminders';
 
 const BACKGROUND_LOCATION_TASK = "TRACKefy_DRIVER_BACKGROUND_LOCATION";
 
@@ -16,7 +17,7 @@ const LAST_SENT_LOCATION_KEY = "TRACKefy_LAST_SENT_LOCATION";
 const MAX_ALLOWED_ACCURACY = 60; // Reject very poor GPS fixes
 const MIN_MOVEMENT_METERS = 3; // Allow slow traffic movement
 const MAX_REASONABLE_SPEED_MPS = 45; // About 162 km/h
-const FORCE_SEND_AFTER_MS = 10000; // Send a heartbeat every 10 seconds
+const FORCE_SEND_AFTER_MS = 3000; // Fresh stationary samples are needed for arrival detection.
 
 const getDistanceInMeters = (
   lat1: number,
@@ -129,8 +130,8 @@ const getFilteredDriverLocation = async (
   const elapsedSeconds = elapsedMs / 1000;
   const estimatedSpeed = distance / elapsedSeconds;
 
-  // Ignore tiny stationary GPS noise, but still send a
-  // heartbeat after 10 seconds.
+  if (current.timestamp <= last.timestamp) return null;
+  // Keep fresh stationary samples; do not resend cached coordinates.
   if (
     distance < MIN_MOVEMENT_METERS &&
     elapsedMs < FORCE_SEND_AFTER_MS
@@ -229,6 +230,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
 
 export default function DriverScreen() {
   const router = useRouter();
+  useEffect(() => registerDriverReminders(), []);
   useEffect(() => {
     const backAction = () => {
       BackHandler.exitApp();
@@ -289,7 +291,7 @@ export default function DriverScreen() {
       {
         accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: 3000,
-        distanceInterval: 3,
+        distanceInterval: 0,
       },
       async (location) => {
         const currentDriver = driver;
@@ -369,7 +371,7 @@ export default function DriverScreen() {
       await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
         accuracy: Location.Accuracy.High,
         timeInterval: 5000,
-        distanceInterval: 10,
+        distanceInterval: 0,
 
         // ✅ Android foreground service for background tracking
         foregroundService: {
@@ -552,6 +554,7 @@ export default function DriverScreen() {
 
       // Stop tracking only after the backend confirms trip end.
       await stopTracking();
+      await cancelDriverReminder();
 
       await fetchDriver();
     } catch (err) {

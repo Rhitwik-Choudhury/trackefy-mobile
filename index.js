@@ -2,6 +2,7 @@ import './firebase';
 
 import messaging from '@react-native-firebase/messaging';
 import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
+import { showDriverReminder } from './services/driver-reminders';
 
 // Create notification channel
 async function createChannel() {
@@ -25,6 +26,9 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 
 // Background / killed state FCM handler
 messaging().setBackgroundMessageHandler(async remoteMessage => {
+  if (remoteMessage?.data?.type === 'TRIP_END_REMINDER') {
+    await showDriverReminder(remoteMessage.data); return;
+  }
   console.log('🔥 BACKGROUND FCM:', remoteMessage);
 
   // Messages containing a notification payload are displayed
