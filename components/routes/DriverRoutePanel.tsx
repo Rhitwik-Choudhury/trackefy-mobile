@@ -9,7 +9,7 @@ export type StartOptions = { direction: Direction; emergency?: boolean; fallback
 export type EndOptions = { confirmIncomplete?: boolean; reason?: string };
 export default function DriverRoutePanel({ active, onStart, onEnd }: { active: boolean; onStart: (options: StartOptions) => Promise<void>; onEnd: (options: EndOptions) => Promise<void> }) {
   const [readiness, setReadiness] = useState<any>(null), [trip, setTrip] = useState<LiveTrip | null>(null), [direction, setDirection] = useState<Direction>('TO_SCHOOL');
-  const [error, setError] = useState(''), [busy, setBusy] = useState(false), [action, setAction] = useState<'skip' | 'end' | 'emergency' | null>(null), [reason, setReason] = useState(''), [now, setNow] = useState(Date.now());
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false), [action, setAction] = useState<'skip' | 'emergency' | null>(null), [reason, setReason] = useState(''), [now, setNow] = useState(Date.now());
   const [busPoint, setBusPoint] = useState<{ latitude: number; longitude: number } | null>(null);
   const displayed = useRef(busPoint), map = useRef<MapView>(null), inFlight = useRef(false);
   const latestTrip = useRef<LiveTrip | null>(null);
@@ -52,14 +52,19 @@ export default function DriverRoutePanel({ active, onStart, onEnd }: { active: b
     const currentAction = action;
     await execute(async () => {
       if (currentAction === 'skip' && trip) { const result = await routeRequest(`/driver/trip/${trip.id}/skip-stop`, { reason, stopIndex: trip.nextStopIndex }); applyTrip(result.trip); }
-      else if (currentAction === 'end') await onEnd({ confirmIncomplete: true, reason });
       else if (currentAction === 'emergency') await onStart({ direction, emergency: true, fallbackReason: reason });
       setAction(null); setReason('');
     });
   }
   function requestEnd() {
-    if (trip?.remainingStopCount) { setReason(''); setAction('end'); }
-    else Alert.alert('End trip?', 'Parents will be notified that this trip has ended.', [{ text: 'Cancel', style: 'cancel' }, { text: 'End Trip', onPress: () => execute(() => onEnd({})) }]);
+    const remaining = trip?.remainingStopCount || 0;
+    const prompt = remaining
+      ? `End this trip now? ${remaining} ${remaining === 1 ? 'stop remains.' : 'stops remain.'}`
+      : 'End this trip now?';
+    Alert.alert(prompt, '', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'End Trip', style: 'destructive', onPress: () => execute(() => onEnd({ confirmIncomplete: remaining > 0 })) },
+    ]);
   }
   return <View style={styles.card}>
     <Text style={styles.heading}>{trip ? 'Current journey' : 'Choose your journey'}</Text>
@@ -70,7 +75,7 @@ export default function DriverRoutePanel({ active, onStart, onEnd }: { active: b
     {trip && <><Text style={styles.heading}>{trip.nextStop?.name || (trip.direction === 'TO_SCHOOL' ? 'Continue to school' : 'All stops finished')}</Text><Text style={styles.body}>{trip.remainingStopCount} stops remaining · {trip.direction === 'TO_SCHOOL' ? 'Morning pickup' : 'Return drop-off'}</Text>{trip.nextStopEta && !stale && <Text style={styles.body}>{(trip.nextStopEta.distanceMeters / 1000).toFixed(1)} km · about {Math.ceil(trip.nextStopEta.seconds / 60)} min to next stop</Text>}<Text style={styles.body}>{trip.nextStop?.students?.map(student => student.name).join(', ')}</Text>{(trip.offRoute || trip.routeState === 'rerouting') && <Text style={styles.warning}>Recalculating the road route…</Text>}{trip.mode !== 'route' && <Text style={styles.warning}>Live tracking only. Personal arrival estimates are unavailable.</Text>}{stale && <Text style={styles.warning}>No recent location update. Check your connection.</Text>}<Text style={styles.small}>Last successful update: {trip.lastLocationUpdatedAt ? new Date(trip.lastLocationUpdatedAt).toLocaleTimeString() : 'Waiting for GPS'}</Text></>}
     {trip?.nextStop?.autoSkipAt && <Text style={styles.warning}>Bus appears to have passed this stop. Automatic skip is pending GPS confirmation.</Text>}
     <View style={styles.row}>{trip || active ? <><TouchableOpacity disabled={busy} style={[styles.button, { backgroundColor: '#dc2626' }]} onPress={requestEnd}><Text style={styles.buttonText}>End Trip</Text></TouchableOpacity>{trip?.nextStop && <TouchableOpacity disabled={busy} style={styles.tab} onPress={() => { setReason(''); setAction('skip'); }}><Text>Skip Stop</Text></TouchableOpacity>}</> : <><TouchableOpacity disabled={busy || !preview?.ready} style={[styles.button, (!preview?.ready || busy) && { opacity: 0.45 }]} onPress={() => execute(() => onStart({ direction }))}><Text style={styles.buttonText}>{busy ? 'Starting…' : direction === 'TO_SCHOOL' ? 'Start Morning Pickup Trip' : 'Start Return Drop-off Trip'}</Text></TouchableOpacity><TouchableOpacity disabled={busy} style={styles.tab} onPress={() => { setReason(''); setAction('emergency'); }}><Text>Emergency: Start live tracking without route</Text></TouchableOpacity></>}</View>
-    <Modal visible={action !== null} transparent animationType="fade" onRequestClose={() => setAction(null)}><View style={styles.overlay}><View style={styles.dialog}><Text style={styles.heading}>{action === 'skip' ? 'Skip the next stop?' : action === 'end' ? 'End with stops remaining?' : 'Start without a route?'}</Text><Text style={styles.body}>Stop safely before using these controls. Enter the reason for the school’s trip record.</Text><TextInput accessibilityLabel="Reason" style={styles.input} multiline value={reason} onChangeText={setReason} placeholder="Reason" />{error && <Text style={styles.warning}>{error}</Text>}<View style={styles.row}><TouchableOpacity style={styles.tab} onPress={() => setAction(null)}><Text>Cancel</Text></TouchableOpacity><TouchableOpacity disabled={busy || reason.trim().length < 5} style={styles.button} onPress={confirmAction}><Text style={styles.buttonText}>Confirm</Text></TouchableOpacity></View></View></View></Modal>
+    <Modal visible={action !== null} transparent animationType="fade" onRequestClose={() => setAction(null)}><View style={styles.overlay}><View style={styles.dialog}><Text style={styles.heading}>{action === 'skip' ? 'Skip the next stop?' : 'Start without a route?'}</Text><Text style={styles.body}>Stop safely before using these controls. Enter a reason for the trip record.</Text><TextInput accessibilityLabel="Reason" style={styles.input} multiline value={reason} onChangeText={setReason} placeholder="Reason" />{error && <Text style={styles.warning}>{error}</Text>}<View style={styles.row}><TouchableOpacity style={styles.tab} onPress={() => setAction(null)}><Text>Cancel</Text></TouchableOpacity><TouchableOpacity disabled={busy || reason.trim().length < 5} style={styles.button} onPress={confirmAction}><Text style={styles.buttonText}>Confirm</Text></TouchableOpacity></View></View></View></Modal>
   </View>;
 }
 const styles = StyleSheet.create({ card: { backgroundColor: '#fff', padding: 16, borderRadius: 16, marginTop: 16 }, heading: { fontWeight: '700', fontSize: 19, color: '#183153', marginBottom: 8 }, body: { color: '#475569', fontSize: 14, marginVertical: 5 }, small: { color: '#64748b', fontSize: 12, marginVertical: 5 }, warning: { color: '#9a3412', marginVertical: 6 }, row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 10 }, tab: { borderColor: '#cbd5e1', borderWidth: 1, padding: 12, borderRadius: 9 }, selected: { backgroundColor: '#2563eb', borderColor: '#2563eb' }, button: { backgroundColor: '#2563eb', borderRadius: 9, padding: 13 }, buttonText: { color: '#fff', fontWeight: '700' }, overlay: { flex: 1, backgroundColor: '#0f172a80', justifyContent: 'center', padding: 20 }, dialog: { borderRadius: 16, backgroundColor: '#fff', padding: 20 }, input: { minHeight: 85, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 12 } });
