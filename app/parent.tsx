@@ -762,9 +762,9 @@ export default function ParentScreen() {
   };
 
   const getStatusText = () => {
-    if (tripStatus === "started") return "🟢 Live";
-    if (tripStatus === "ended") return "🔴 Trip Ended";
-    return "⚪ Waiting";
+    if (tripStatus === "started") return "Live";
+    if (tripStatus === "ended") return "Trip Ended";
+    return "Not Started";
   };
 
   if (loading || !parentData) {
@@ -887,11 +887,15 @@ export default function ParentScreen() {
           <Text style={styles.statusDescription}>
             {route.trip?.personal?.status === 'skipped'
               ? 'The bus trip is still in progress, but it will continue without stopping here.'
-              : tripStatus === 'started'
-                ? 'The bus is on the way to your child’s stop.'
-                : tripStatus === 'ended'
-                  ? 'The bus trip has ended.'
-                  : 'Trip updates will appear here when the driver starts.'}
+              : route.trip?.personal?.status === 'completed' && route.trip.direction === 'TO_SCHOOL'
+                ? 'Your child has been picked up. The bus is on the way to school.'
+                : route.trip?.personal?.status === 'completed'
+                  ? 'Your child has been dropped off.'
+                  : tripStatus === 'started'
+                    ? 'The bus is on the way to your child’s stop.'
+                    : tripStatus === 'ended'
+                      ? 'The bus trip has ended.'
+                      : 'Trip updates will appear here when the driver starts.'}
           </Text>
         </View>
 
