@@ -535,20 +535,35 @@ export default function DriverScreen() {
   const handleEndTrip = async (options: EndOptions = {}) => {
     try {
       const token = await AsyncStorage.getItem("token");
+      let endResponse: Response | null = null;
 
-      const endResponse = await fetch(`${BASE_URL}/driver/end-trip`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(options),
-      });
+      // Location updates share the bus lock with end-trip. Retry only that
+      // temporary conflict, which is safe because ending a trip is idempotent.
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        endResponse = await fetch(`${BASE_URL}/driver/end-trip`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(options),
+        });
+        if (endResponse.status !== 423 || attempt === 4) break;
+        await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
+      }
 
-      if (!endResponse.ok) {
-        const errorText = await endResponse.text();
-
+      if (!endResponse?.ok) {
+        const errorText = await endResponse?.text();
         console.log("End trip rejected:", {
-          status: endResponse.status,
+          status: endResponse?.status,
           response: errorText,
         });
 
-        alert("Unable to end the trip. Please try again.");
+        let message = "Unable to end the trip. Please try again.";
+        try {
+          const parsed = errorText ? JSON.parse(errorText) : null;
+          if (typeof parsed?.message === 'string') message = parsed.message;
+        } catch {
+          if (errorText) message = errorText;
+        }
+        alert(message);
         return;
       }
 
