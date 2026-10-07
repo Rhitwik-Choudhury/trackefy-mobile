@@ -24,7 +24,7 @@ export default function ParentEtaCard({ trip, pickup, error, connected, onReques
     else if (skipped) title = 'Your stop was skipped';
     else if (personal.status === 'completed') title = trip.direction === 'TO_SCHOOL' ? 'Child picked up' : 'Drop-off stop completed';
     else if (personal.status === 'arrived') title = 'Bus has arrived at your stop';
-    else if (minutes !== null && !stale && !trip.offRoute) title = `Bus reaches your stop in about ${minutes < 1 ? 'less than 1' : minutes} min`;
+    else if (minutes !== null && !stale && !trip.offRoute) title = minutes < 1 ? 'Bus reaches your stop in less than 1 min' : `Bus reaches your stop in about ${minutes} min`;
     else title = 'Arrival estimate updating';
   }
   const showLiveMetrics = !!trip && !!personal && !skipped && personal.status !== 'completed' && personal.status !== 'arrived' && !stale && !trip.offRoute;
