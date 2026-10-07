@@ -650,9 +650,9 @@ export default function DriverScreen() {
         <View style={styles.statusCard}>
           <Text style={styles.statusTitle}>Trip Status</Text>
 
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>
-              {isOnTrip ? "Started" : "Not Started"}
+          <View style={[styles.statusBadge, isOnTrip && styles.statusBadgeLive]}>
+            <Text style={[styles.statusText, isOnTrip && styles.statusTextLive]}>
+              {isOnTrip ? "Live" : "Not Started"}
             </Text>
           </View>
         </View>
@@ -796,17 +796,17 @@ const styles = StyleSheet.create({
   },
 
   statusBadge: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: "#f59e0b",
-    padding: 10,
-    borderRadius: 10,
+    backgroundColor: "#fffbeb",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
     alignSelf: "flex-start",
   },
-
-  statusText: {
-    color: "#f59e0b",
-    fontWeight: "bold",
-  },
+  statusBadgeLive: { borderColor: "#a7f3d0", backgroundColor: "#d1fae5" },
+  statusText: { color: "#b45309", fontWeight: "700" },
+  statusTextLive: { color: "#047857" },
 
   startButton: {
     backgroundColor: "#22c55e",
