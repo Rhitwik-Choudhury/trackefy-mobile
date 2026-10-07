@@ -32,7 +32,7 @@ import messaging from '@react-native-firebase/messaging';
 // import { getApp } from '@react-native-firebase/app';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-const MAP_HEIGHT = SCREEN_HEIGHT * 0.60;
+const MAP_HEIGHT = Math.min(340, Math.max(240, SCREEN_HEIGHT * 0.34));
 
 type MapCoordinate = {
   latitude: number;
@@ -762,9 +762,9 @@ export default function ParentScreen() {
   };
 
   const getStatusText = () => {
-    if (tripStatus === "started") return "🟢 Live";
-    if (tripStatus === "ended") return "🔴 Trip Ended";
-    return "⚪ Waiting";
+    if (tripStatus === "started") return "Live";
+    if (tripStatus === "ended") return "Trip Ended";
+    return "Not Started";
   };
 
   if (loading || !parentData) {
@@ -868,14 +868,35 @@ export default function ParentScreen() {
           )}
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-          {(parent?.children || []).map((item: any) => <TouchableOpacity key={item._id} accessibilityRole="button" onPress={() => setSelectedChildId(item._id)} style={{ padding: 12, borderRadius: 10, marginRight: 8, backgroundColor: child?._id === item._id ? '#dbeafe' : '#fff' }}><Text style={{ color: '#1d4ed8', fontWeight: '600' }}>{item.name}</Text><Text>{item.busId?.busNumber || 'No bus assigned'}</Text></TouchableOpacity>)}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.childSelector}>
+          {(parent?.children || []).map((item: any) => (
+            <TouchableOpacity key={item._id} accessibilityRole="button" accessibilityState={{ selected: child?._id === item._id }} onPress={() => setSelectedChildId(item._id)} style={[styles.childCard, child?._id === item._id && styles.childCardSelected]}>
+              <View style={styles.childAvatar}><Text style={styles.childAvatarText}>{item.name?.charAt(0)?.toUpperCase() || 'S'}</Text></View>
+              <View style={styles.childInfo}><Text style={styles.childName} numberOfLines={1}>{item.name}</Text><Text style={styles.childMeta} numberOfLines={1}>{item.class ? `Class ${item.class}` : 'Student'} · {item.busId?.busNumber || 'No bus assigned'}</Text></View>
+              <Text style={styles.childChevron}>⌄</Text>
+            </TouchableOpacity>
+          ))}
         </ScrollView>
         <ParentEtaCard trip={route.trip} pickup={route.pickup} connected={route.connected} error={route.error} onRequest={openLocationPicker} onRefresh={route.refresh} />
         {!child && <View style={styles.infoCard}><Text>Link your child with the student code supplied by the school.</Text><TextInput accessibilityLabel="Student code" placeholder="Student code" value={linkCode} onChangeText={setLinkCode} autoCapitalize="characters" /><TouchableOpacity onPress={async () => { try { await routeRequest('/parent/children', { studentCode: linkCode }); const profile = await routeRequest('/parent/me'); setParentData(profile.parent); } catch (e) { alert(e instanceof Error ? e.message : 'Unable to link child'); } }}><Text>Link child</Text></TouchableOpacity></View>}
         <View style={styles.statusCardNew}>
-          <Text style={styles.statusLabel}>Trip Status</Text>
-          <Text style={styles.statusValue}>{getStatusText()}</Text>
+          <View style={styles.statusHeader}>
+            <Text style={styles.statusLabel}>Trip Status</Text>
+            <Text style={[styles.statusPill, tripStatus === 'started' ? styles.statusPillLive : tripStatus === 'ended' ? styles.statusPillEnded : styles.statusPillWaiting]}>{getStatusText()}</Text>
+          </View>
+          <Text style={styles.statusDescription}>
+            {route.trip?.personal?.status === 'skipped'
+              ? 'The bus trip is still in progress, but it will continue without stopping here.'
+              : route.trip?.personal?.status === 'completed' && route.trip.direction === 'TO_SCHOOL'
+                ? 'Your child has been picked up. The bus is on the way to school.'
+                : route.trip?.personal?.status === 'completed'
+                  ? 'Your child has been dropped off.'
+                  : tripStatus === 'started'
+                    ? 'The bus is on the way to your child’s stop.'
+                    : tripStatus === 'ended'
+                      ? 'The bus trip has ended.'
+                      : 'Trip updates will appear here when the driver starts.'}
+          </Text>
         </View>
 
         <View style={styles.mapContainer}>
@@ -1141,9 +1162,18 @@ export default function ParentScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 20,
-    paddingBottom: 60,
+    padding: 18,
+    paddingBottom: 32,
   },
+  childSelector: { marginBottom: 12, flexGrow: 0 },
+  childCard: { minWidth: 220, maxWidth: 280, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderColor: '#e2e8f0', borderWidth: 1, borderRadius: 14, padding: 10, marginRight: 10, elevation: 1 },
+  childCardSelected: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
+  childAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#dbeafe', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  childAvatarText: { color: '#1d4ed8', fontSize: 17, fontWeight: '700' },
+  childInfo: { flex: 1 },
+  childName: { color: '#183153', fontWeight: '700', fontSize: 14 },
+  childMeta: { color: '#64748b', fontSize: 11, marginTop: 3 },
+  childChevron: { color: '#64748b', fontSize: 20, marginLeft: 6 },
   header: { fontSize: 18, color: "#666" },
   name: { fontSize: 26, fontWeight: "bold", color: "#2563eb", marginBottom: 20 },
   card: { backgroundColor: "#fff", padding: 15, borderRadius: 12, elevation: 3 },
@@ -1377,24 +1407,20 @@ const styles = StyleSheet.create({
   },
 
   statusCardNew: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "#ecfdf5",
     padding: 16,
-    borderRadius: 14,
-    marginBottom: 16,
-    elevation: 2,
+    borderRadius: 16,
+    marginBottom: 14,
+    borderColor: "#d1fae5",
+    borderWidth: 1,
   },
-
-  statusLabel: {
-    color: "#6b7280",
-    fontSize: 14,
-    marginBottom: 6,
-  },
-
-  statusValue: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#111827",
-  },
+  statusHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  statusLabel: { color: "#64748b", fontSize: 13, fontWeight: "600" },
+  statusPill: { fontSize: 12, fontWeight: "700", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, overflow: "hidden" },
+  statusPillLive: { color: "#047857", backgroundColor: "#d1fae5" },
+  statusPillEnded: { color: "#b91c1c", backgroundColor: "#fee2e2" },
+  statusPillWaiting: { color: "#92400e", backgroundColor: "#fef3c7" },
+  statusDescription: { color: "#475569", fontSize: 13, lineHeight: 19, marginTop: 8 },
 
   modalOverlay: {
     flex: 1,
