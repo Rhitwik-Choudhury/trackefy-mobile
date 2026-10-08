@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL } from '../constants/api';
 export type Coordinate = { lat: number; lng: number };
-export type Stop = { routeStopId: string; name: string; location: Coordinate; status: string; students: { id: string; name: string }[]; skipReason?: string; autoSkipAt?: string; skipSource?: 'manual' | 'automatic' | 'trip_end' };
+export type Stop = { routeStopId: string; name: string; location: Coordinate; status: string; students?: { id: string; name: string }[]; skipReason?: string; autoSkipAt?: string; skipSource?: 'manual' | 'automatic' | 'trip_end' };
 export type LiveTrip = { id: string; revision?: number; updatedAt?: string; startedAt?: string; busId: string; studentId?: string; status: string; direction: 'TO_SCHOOL' | 'FROM_SCHOOL'; mode: string; routePlanVersion?: number; currentLocation?: Coordinate; schoolLocation?: Coordinate; lastLocationUpdatedAt?: string; routeState: string; offRoute?: boolean; stale?: boolean; remainingPolyline?: string; completedPolyline?: string; plannedPolyline?: string; totalStopCount: number; remainingStopCount: number; nextStopIndex?: number; nextStop?: Stop; nextStopEta?: { seconds: number; distanceMeters: number }; stops?: Stop[]; terminalEta?: string; finishReminder?: { candidateAt: string; snoozedUntil?: string; overdue: boolean; message: string } | null; personal?: { approvedStop: { name: string; location: Coordinate }; status: string; estimatedArrival?: string; distanceMeters?: number; stopsBeforeYours?: number; skipReason?: string } | null };
 export type PickupState = { studentId: string; status: string; published: boolean; approved?: { id: string; name: string; location: Coordinate; formattedAddress?: string } | null; request?: { id: string; status: string; requestedLocation: Coordinate; formattedAddress?: string; reviewNote?: string; submittedBy: string; acknowledgedAt?: string } | null };
 export async function routeRequest<T = any>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
@@ -20,3 +20,4 @@ export function decodeRoute(encoded = '') {
   return points;
 }
 export const mapCoordinate = (point: Coordinate) => ({ latitude: point.lat, longitude: point.lng });
+

@@ -107,7 +107,7 @@ export default function RegisterScreen() {
 
   const validate = () => {
     if (!fullName.trim()) return "Please enter your full name.";
-    if (role === "parent" && !/^\d{10}$/.test(phone)) return "Please enter a valid 10-digit phone number.";
+    if (!/^\d{10}$/.test(phone)) return "Please enter a valid 10-digit phone number.";
     if (!emailPattern.test(normalizedEmail)) return "Please enter a valid email address.";
     if (!otpSent || verifiedEmail !== normalizedEmail) return "Please request an email verification code first.";
     if (!/^\d{6}$/.test(otp)) return "Please enter the 6-digit verification code.";
@@ -131,7 +131,7 @@ export default function RegisterScreen() {
     const normalizedCode = accountCode.trim().toUpperCase();
     const payload = role === "parent"
       ? { fullName: fullName.trim(), phone, email: normalizedEmail, password, otp, studentCode: normalizedCode, children: [] }
-      : { fullName: fullName.trim(), email: normalizedEmail, password, otp, driverCode: normalizedCode };
+      : { fullName: fullName.trim(), phone, email: normalizedEmail, password, otp, driverCode: normalizedCode };
 
     setIsCreating(true);
     try {
@@ -192,7 +192,7 @@ export default function RegisterScreen() {
               placeholder="Enter your full name" autoCapitalize="words"
             />
 
-            {role === "parent" && (
+            {(role === "parent" || role === "driver") && (
               <Field label="Phone number" icon="call-outline" value={phone}
                 onChangeText={(value) => setPhone(value.replace(/\D/g, "").slice(0, 10))}
                 placeholder="Enter your 10-digit phone number" keyboardType="phone-pad" maxLength={10}
@@ -315,3 +315,4 @@ const styles = StyleSheet.create({
   createButtonText: { color: "#FFFFFF", fontSize: 17, fontWeight: "800" }, disabledButton: { opacity: 0.55 },
   signInLink: { paddingVertical: 17, alignItems: "center" }, signInText: { color: "#64748B", fontSize: 14 }, signInAccent: { color: "#2563EB", fontWeight: "800" },
 });
+

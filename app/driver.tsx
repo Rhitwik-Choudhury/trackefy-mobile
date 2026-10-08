@@ -1,4 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet, Linking, BackHandler, Modal, ScrollView } from "react-native";
+import { Ionicons } from '@expo/vector-icons';
+import DriverContactEditor from '../components/routes/DriverContactEditor';
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -246,6 +248,7 @@ export default function DriverScreen() {
   }, []);
   const [driverData, setDriverData] = useState<any>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
   const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
   const locationWatcher = useRef<any>(null);
   const pendingStart = useRef<StartOptions>({ direction: 'TO_SCHOOL' });
@@ -567,10 +570,10 @@ export default function DriverScreen() {
         return;
       }
 
-      // Stop tracking only after the backend confirms trip end.
-      await stopTracking();
-      await cancelDriverReminder();
-
+      // A successful end must stay visibly ended even if local cleanup fails.
+      setDriverData((current: any) => ({ ...current, isOnTrip: false }));
+      try { await stopTracking(); } catch (error) { console.warn('Trip ended; location cleanup needs retry', error); }
+      try { await cancelDriverReminder(); } catch (error) { console.warn('Trip ended; reminder cleanup failed', error); }
       await fetchDriver();
     } catch (err) {
       console.log("End trip error:", err);
@@ -633,18 +636,7 @@ export default function DriverScreen() {
         <Text style={styles.header}>Hello,</Text>
         <Text style={styles.name}>{driverData?.fullName || "Driver"}</Text>
 
-        {/* BUS CARD */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>🚌 Assigned Bus</Text>
-
-          <Text style={styles.busNumber}>
-            {bus?.busNumber || "--"}
-          </Text>
-
-          <Text style={styles.route}>
-            Route: {bus?.route || "N/A"}
-          </Text>
-        </View>
+        <View style={styles.card}><View style={styles.busIcon}><Ionicons name="bus" size={35} color="#b57b00" /></View><View style={{ flex: 1 }}><Text style={styles.cardTitle}>Assigned Bus</Text><Text style={styles.busNumber}>{bus?.busNumber || '--'}</Text><Text style={styles.route}>{bus?.route || 'Awaiting assignment'}</Text></View></View>
 
         {/* TRIP STATUS */}
         <View style={styles.statusCard}>
@@ -659,6 +651,7 @@ export default function DriverScreen() {
 
         <DriverRoutePanel active={!!isOnTrip} onStart={async options => { pendingStart.current = options; await handleStartTrip(); }} onEnd={handleEndTrip} />
 
+        <DriverContactEditor visible={contactOpen} phone={driverData?.phone} onClose={() => setContactOpen(false)} onSave={phone => setDriverData((current: any) => ({ ...current, phone }))} />
         {/* MENU */}
         <View style={styles.menuWrapper}>
           <TouchableOpacity
@@ -670,6 +663,7 @@ export default function DriverScreen() {
 
           {menuOpen && (
             <View style={styles.dropdown}>
+              <TouchableOpacity style={styles.dropdownItem} onPress={() => { setMenuOpen(false); setContactOpen(true); }}><Text style={styles.dropdownText}>Contact Number</Text></TouchableOpacity>
               
               <TouchableOpacity
                 style={styles.dropdownItem}
@@ -739,68 +733,74 @@ export default function DriverScreen() {
 }
 
 const styles = StyleSheet.create({
+  busIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: "#fff0bd", justifyContent: "center", alignItems: "center" },
   container: {
     flexGrow: 1,
-    padding: 20,
-    backgroundColor: "#f5f6fa",
+    padding: 14,
+    backgroundColor: "#f7faff",
   },
 
   header: {
-    fontSize: 18,
-    color: "#666",
+    fontSize: 13,
+    color: "#475569",
   },
 
   name: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#2563eb",
-    marginBottom: 20,
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#172554",
+    marginBottom: 12,
   },
 
   card: {
-    backgroundColor: "#fff",
-    padding: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#edf5ff",
+    padding: 12,
     borderRadius: 12,
-    marginBottom: 20,
-    elevation: 3,
-  },
-
-  cardTitle: {
-    fontSize: 16,
-    color: "#555",
     marginBottom: 10,
   },
 
+  cardTitle: {
+    fontSize: 11,
+    color: "#64748b",
+    marginBottom: 2,
+  },
+
   busNumber: {
-    fontSize: 40,
-    fontWeight: "bold",
-    color: "#2563eb",
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#172554",
   },
 
   route: {
-    color: "#666",
-    marginTop: 5,
+    color: "#64748b",
+    fontSize: 11,
+    marginTop: 2,
   },
 
   statusCard: {
     backgroundColor: "#fff",
-    padding: 20,
+    padding: 12,
     borderRadius: 12,
-    marginBottom: 20,
-    elevation: 2,
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
 
   statusTitle: {
-    color: "#666",
-    marginBottom: 10,
+    color: "#64748b",
+    fontSize: 12,
   },
 
   statusBadge: {
     borderWidth: 1,
     borderColor: "#f59e0b",
     backgroundColor: "#fffbeb",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 20,
     alignSelf: "flex-start",
   },
@@ -829,8 +829,8 @@ const styles = StyleSheet.create({
   },
   menuWrapper: {
     position: "absolute",
-    top: 50,
-    right: 20,
+    top: 14,
+    right: 14,
     zIndex: 20,
     alignItems: "flex-end",
   },

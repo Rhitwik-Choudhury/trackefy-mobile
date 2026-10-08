@@ -1,5 +1,7 @@
 // import "../firebase";
 import notifee from '@notifee/react-native';
+import { useParentAlerts } from '../hooks/use-parent-alerts';
+import ParentDialogs from '../components/routes/ParentDialogs';
 import {
   View,
   Text,
@@ -32,7 +34,7 @@ import messaging from '@react-native-firebase/messaging';
 // import { getApp } from '@react-native-firebase/app';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-const MAP_HEIGHT = Math.min(340, Math.max(240, SCREEN_HEIGHT * 0.34));
+const MAP_HEIGHT = Math.min(280, Math.max(190, SCREEN_HEIGHT * 0.27));
 
 type MapCoordinate = {
   latitude: number;
@@ -125,6 +127,8 @@ const smoothHeading = (
 
 export default function ParentScreen() {
   const [loading, setLoading] = useState(true);
+  const alerts = useParentAlerts();
+  const [dialog, setDialog] = useState<'children' | 'notifications' | 'contact' | null>(null);
   const router = useRouter();
   useEffect(() => {
     const backAction = () => {
@@ -266,7 +270,8 @@ export default function ParentScreen() {
           remoteMessage?.data?.body;
 
         if (title || body) {
-          alert(`${title || ""}\n${body || ""}`);
+          // The saved inbox and unread badge update through useParentAlerts.
+          // Android displays background pushes; avoid duplicate foreground dialogs.
         }
       }
     );
@@ -563,7 +568,7 @@ export default function ParentScreen() {
   useEffect(() => {
     const trip = route.trip;
     if (trip && trip.studentId !== child?._id) return;
-    setTripStatus(trip?.status === 'active' ? 'started' : 'idle');
+    setTripStatus(trip?.status === 'active' ? 'started' : trip?.status === 'completed' ? 'ended' : 'idle');
     setPath(decodeRoute(trip?.remainingPolyline));
     if (trip?.currentLocation) processLocationUpdate(trip.currentLocation.lat, trip.currentLocation.lng, trip.lastLocationUpdatedAt);
     const approved = trip?.personal?.approvedStop?.location || route.pickup?.approved?.location;
@@ -776,23 +781,15 @@ export default function ParentScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#f5f6fa" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#f7faff" }}>
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.topRow}>
-          <View>
-            <Text style={styles.header}>Hello,</Text>
-            <Text style={styles.name}>{parent?.fullName || "Parent"}</Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={() => setMenuOpen(!menuOpen)}
-          >
-            <Text style={styles.menuIcon}>☰</Text>
-          </TouchableOpacity>
+          <TouchableOpacity accessibilityLabel="Open menu" style={styles.menuButton} onPress={() => setMenuOpen(!menuOpen)}><Ionicons name="menu-outline" size={25} color="#172554" /></TouchableOpacity>
+          <View style={{ flex: 1, marginLeft: 10 }}><Text style={styles.header}>Hello,</Text><Text style={styles.name}>{parent?.fullName || 'Parent'}</Text></View>
+          <TouchableOpacity accessibilityLabel={`Notifications, ${alerts.unreadCount} unread`} style={styles.menuButton} onPress={() => { setDialog('notifications'); alerts.refresh(); }}><Ionicons name="notifications-outline" size={26} color="#172554" />{alerts.unreadCount > 0 && <View style={styles.unreadBadge}><Text style={styles.unreadText}>{alerts.unreadCount > 99 ? '99+' : alerts.unreadCount}</Text></View>}</TouchableOpacity>
 
           {menuOpen && (
             <View style={styles.dropdown}>
@@ -868,35 +865,22 @@ export default function ParentScreen() {
           )}
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.childSelector}>
-          {(parent?.children || []).map((item: any) => (
-            <TouchableOpacity key={item._id} accessibilityRole="button" accessibilityState={{ selected: child?._id === item._id }} onPress={() => setSelectedChildId(item._id)} style={[styles.childCard, child?._id === item._id && styles.childCardSelected]}>
-              <View style={styles.childAvatar}><Text style={styles.childAvatarText}>{item.name?.charAt(0)?.toUpperCase() || 'S'}</Text></View>
-              <View style={styles.childInfo}><Text style={styles.childName} numberOfLines={1}>{item.name}</Text><Text style={styles.childMeta} numberOfLines={1}>{item.class ? `Class ${item.class}` : 'Student'} · {item.busId?.busNumber || 'No bus assigned'}</Text></View>
-              <Text style={styles.childChevron}>⌄</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <View style={styles.selectionRow}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Select child" style={styles.selectorCard} onPress={() => setDialog('children')}>
+            <View style={styles.childAvatar}><Ionicons name="person" size={25} color="#1383ed" /></View><View style={styles.childInfo}><Text style={styles.childName} numberOfLines={1}>{child?.name || 'Your child'}</Text><Text style={styles.childMeta}>{child?.class ? `Class ${child.class}` : 'Link a student'}</Text></View><Ionicons name="chevron-down" size={16} color="#172554" />
+          </TouchableOpacity>
+          <View style={styles.selectorCard}><View style={styles.busAvatar}><Ionicons name="bus" size={27} color="#b57b00" /></View><View style={styles.childInfo}><Text style={styles.childName} numberOfLines={1}>{bus?.busNumber ? `Bus ${bus.busNumber}` : 'No bus assigned'}</Text><Text style={styles.childMeta} numberOfLines={1}>{bus?.route || 'Awaiting assignment'}</Text></View></View>
+        </View>
         <ParentEtaCard trip={route.trip} pickup={route.pickup} connected={route.connected} error={route.error} onRequest={openLocationPicker} onRefresh={route.refresh} />
         {!child && <View style={styles.infoCard}><Text>Link your child with the student code supplied by the school.</Text><TextInput accessibilityLabel="Student code" placeholder="Student code" value={linkCode} onChangeText={setLinkCode} autoCapitalize="characters" /><TouchableOpacity onPress={async () => { try { await routeRequest('/parent/children', { studentCode: linkCode }); const profile = await routeRequest('/parent/me'); setParentData(profile.parent); } catch (e) { alert(e instanceof Error ? e.message : 'Unable to link child'); } }}><Text>Link child</Text></TouchableOpacity></View>}
-        <View style={styles.statusCardNew}>
-          <View style={styles.statusHeader}>
-            <Text style={styles.statusLabel}>Trip Status</Text>
-            <Text style={[styles.statusPill, tripStatus === 'started' ? styles.statusPillLive : tripStatus === 'ended' ? styles.statusPillEnded : styles.statusPillWaiting]}>{getStatusText()}</Text>
-          </View>
-          <Text style={styles.statusDescription}>
-            {route.trip?.personal?.status === 'skipped'
-              ? 'The bus trip is still in progress, but it will continue without stopping here.'
-              : route.trip?.personal?.status === 'completed' && route.trip.direction === 'TO_SCHOOL'
-                ? 'Your child has been picked up. The bus is on the way to school.'
-                : route.trip?.personal?.status === 'completed'
-                  ? 'Your child has been dropped off.'
-                  : tripStatus === 'started'
-                    ? 'The bus is on the way to your child’s stop.'
-                    : tripStatus === 'ended'
-                      ? 'The bus trip has ended.'
-                      : 'Trip updates will appear here when the driver starts.'}
-          </Text>
+        <View style={[styles.statusCardNew, tripStatus !== 'started' && { backgroundColor: '#f1f5f9' }]}>
+          <View style={styles.tripIcon}><Ionicons name="bus-outline" size={30} color="#fff" /></View>
+          <View style={{ flex: 1 }}><Text style={styles.statusLabel}>Trip Status</Text><Text style={styles.statusValue}>{getStatusText()}</Text><Text style={styles.statusDescription}>
+            {route.trip?.personal?.status === 'skipped' ? route.trip.status === 'active' ? 'Your stop was skipped. The bus trip is still live.' : 'The trip ended before reaching your child’s stop.'
+              : route.trip?.personal?.status === 'completed' ? route.trip.direction === 'TO_SCHOOL' ? 'Your child was picked up. The bus is on the way to school.' : 'Your child’s drop-off stop is completed.'
+              : tripStatus === 'started' ? `Bus is on the way to your ${route.trip?.direction === 'FROM_SCHOOL' ? 'drop-off' : 'pickup'} stop.`
+              : tripStatus === 'ended' ? 'The bus trip has ended.' : 'Waiting for the driver to start the trip.'}
+          </Text></View><Ionicons name="radio-outline" size={30} color="#00ab5b" />
         </View>
 
         <View style={styles.mapContainer}>
@@ -942,6 +926,8 @@ export default function ParentScreen() {
               <Polyline coordinates={path} strokeWidth={4} strokeColor="#2563eb" />
             )}
 
+            {(route.trip?.stops || []).map((stop: any, index: number) => <Marker key={stop.routeStopId || index} coordinate={mapCoordinate(stop.location)} title={stop.name} pinColor={stop.status === 'completed' ? '#00ab5b' : stop.status === 'skipped' ? '#f59e0b' : '#1683f7'} />)}
+            {route.trip?.status === 'active' && route.trip?.nextStop && <Marker coordinate={mapCoordinate(route.trip.nextStop.location)} title="Next Stop" description={route.trip.nextStop.name} pinColor="red"><View style={styles.nextMarker}><Ionicons name="location" size={30} color="#ef4444" /><View style={styles.nextLabel}><Text style={styles.nextEyebrow}>Next Stop</Text><Text style={styles.childName}>{route.trip.nextStop.name}</Text><Text style={styles.childMeta}>{route.trip.nextStopEta && !route.trip.stale ? `~ ${Math.ceil(route.trip.nextStopEta.seconds / 60)} min` : 'Updating ETA'}</Text></View></View></Marker>}
             {pickupLocation && (
               <Marker coordinate={pickupLocation} pinColor="green" />
             )}
@@ -961,16 +947,16 @@ export default function ParentScreen() {
             }}
             style={styles.recenter}
           >
-            <Text>📍 Center</Text>
+            <Ionicons name="locate-outline" size={24} color="#172554" />
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={styles.button}
-          onPress={openLocationPicker}
-        >
-          <Text style={styles.buttonText}>Set Pickup Location</Text>
-        </TouchableOpacity>
+        <View style={styles.bottomActions}>
+          <TouchableOpacity accessibilityLabel={alerts.enabled ? "Get Alerts, notifications enabled" : "Get Alerts, enable notifications"} style={styles.bottomAction} onPress={alerts.enableAlerts}><Ionicons name="notifications" size={23} color="#087cf0" /><View style={{ flex: 1 }}><Text style={styles.actionTitle}>Get Alerts</Text><Text style={styles.actionSub}>On-time · Delays</Text></View></TouchableOpacity>
+          <TouchableOpacity style={styles.bottomAction} onPress={openLocationPicker}><Ionicons name="location" size={23} color="#087cf0" /><View style={{ flex: 1 }}><Text style={styles.actionTitle}>Request Change</Text><Text style={styles.actionSub}>Pickup/Drop-off</Text></View></TouchableOpacity>
+          <TouchableOpacity style={styles.bottomAction} onPress={() => { setDialog('contact'); routeRequest('/parent/me').then(profile => setParentData(profile.parent)).catch(() => {}); }}><Ionicons name="call" size={23} color="#00ab5b" /><View style={{ flex: 1 }}><Text style={styles.actionTitle}>Contact</Text><Text style={styles.actionSub}>Driver</Text></View></TouchableOpacity>
+        </View>
+        <ParentDialogs kind={dialog} onClose={() => setDialog(null)} children={parent?.children || []} selectedId={child?._id} onChild={setSelectedChildId} driver={driver} notifications={alerts.notifications} error={alerts.error} onRefresh={alerts.refresh} onRead={alerts.markRead} />
 
         <Modal
           visible={isPickingLocation}
@@ -1161,21 +1147,35 @@ export default function ParentScreen() {
 }
 
 const styles = StyleSheet.create({
+  selectionRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  selectorCard: { flex: 1, minHeight: 62, flexDirection: 'row', gap: 6, alignItems: 'center', backgroundColor: '#edf5ff', borderRadius: 14, padding: 8 },
+  busAvatar: { backgroundColor: '#fff0bd', width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  unreadBadge: { position: 'absolute', top: 1, right: 1, backgroundColor: '#ef4444', minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  unreadText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+  tripIcon: { width: 48, height: 48, backgroundColor: '#00ab5b', borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  statusValue: { fontSize: 20, fontWeight: '800', color: '#172554' },
+  bottomActions: { flexDirection: 'row', gap: 6, marginTop: 10 },
+  bottomAction: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, backgroundColor: '#fff', paddingHorizontal: 7, paddingVertical: 12, minHeight: 58 },
+  actionTitle: { color: '#087cf0', fontSize: 10, fontWeight: '800' },
+  actionSub: { color: '#64748b', fontSize: 8, marginTop: 3 },
+  nextMarker: { flexDirection: 'row', alignItems: 'center', padding: 3 },
+  nextLabel: { backgroundColor: '#fff', padding: 7, borderRadius: 9, maxWidth: 150 },
+  nextEyebrow: { color: '#64748b', fontSize: 9 },
   container: {
-    padding: 18,
-    paddingBottom: 32,
+    padding: 14,
+    paddingBottom: 24,
   },
   childSelector: { marginBottom: 12, flexGrow: 0 },
   childCard: { minWidth: 220, maxWidth: 280, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderColor: '#e2e8f0', borderWidth: 1, borderRadius: 14, padding: 10, marginRight: 10, elevation: 1 },
   childCardSelected: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
-  childAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#dbeafe', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  childAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#dbeafe', alignItems: 'center', justifyContent: 'center', marginRight: 0 },
   childAvatarText: { color: '#1d4ed8', fontSize: 17, fontWeight: '700' },
   childInfo: { flex: 1 },
-  childName: { color: '#183153', fontWeight: '700', fontSize: 14 },
+  childName: { color: '#172554', fontWeight: '700', fontSize: 12 },
   childMeta: { color: '#64748b', fontSize: 11, marginTop: 3 },
   childChevron: { color: '#64748b', fontSize: 20, marginLeft: 6 },
-  header: { fontSize: 18, color: "#666" },
-  name: { fontSize: 26, fontWeight: "bold", color: "#2563eb", marginBottom: 20 },
+  header: { fontSize: 13, color: "#475569" },
+  name: { fontSize: 21, fontWeight: "800", color: "#172554" },
   card: { backgroundColor: "#fff", padding: 15, borderRadius: 12, elevation: 3 },
   cardTitle: { fontWeight: "bold" },
   busNumber: { fontSize: 40, fontWeight: "bold", color: "#2563eb" },
@@ -1184,7 +1184,7 @@ const styles = StyleSheet.create({
   infoCard: { backgroundColor: "#fff", padding: 15, borderRadius: 12, marginTop: 15 },
   infoText: { marginBottom: 5 },
   mapContainer: {
-    marginTop: 12,
+    marginTop: 0,
     position: "relative",
     borderRadius: 16,
     overflow: "hidden",
@@ -1361,8 +1361,8 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 20,
+    alignItems: "center",
+    marginBottom: 12,
     position: "relative",
     zIndex: 20,
   },
@@ -1386,7 +1386,7 @@ const styles = StyleSheet.create({
   dropdown: {
     position: "absolute",
     top: 52,
-    right: 0,
+    left: 0,
     backgroundColor: "#ffffff",
     borderRadius: 12,
     paddingVertical: 8,
@@ -1408,9 +1408,12 @@ const styles = StyleSheet.create({
 
   statusCardNew: {
     backgroundColor: "#ecfdf5",
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 14,
+    padding: 12,
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+    borderRadius: 14,
+    marginBottom: 10,
     borderColor: "#d1fae5",
     borderWidth: 1,
   },
@@ -1420,7 +1423,7 @@ const styles = StyleSheet.create({
   statusPillLive: { color: "#047857", backgroundColor: "#d1fae5" },
   statusPillEnded: { color: "#b91c1c", backgroundColor: "#fee2e2" },
   statusPillWaiting: { color: "#92400e", backgroundColor: "#fef3c7" },
-  statusDescription: { color: "#475569", fontSize: 13, lineHeight: 19, marginTop: 8 },
+  statusDescription: { color: "#64748b", fontSize: 11, lineHeight: 16, marginTop: 3 },
 
   modalOverlay: {
     flex: 1,
