@@ -871,7 +871,7 @@ export default function ParentScreen() {
           </TouchableOpacity>
           <View style={styles.selectorCard}><View style={styles.busAvatar}><Ionicons name="bus" size={27} color="#b57b00" /></View><View style={styles.childInfo}><Text style={styles.childName} numberOfLines={1}>{bus?.busNumber ? `Bus ${bus.busNumber}` : 'No bus assigned'}</Text><Text style={styles.childMeta} numberOfLines={1}>{bus?.route || 'Awaiting assignment'}</Text></View></View>
         </View>
-        <ParentEtaCard trip={route.trip} pickup={route.pickup} connected={route.connected} error={route.error} onRequest={openLocationPicker} onRefresh={route.refresh} />
+        <ParentEtaCard trip={route.trip} pickup={route.pickup} connected={route.connected} onRequest={openLocationPicker} onRefresh={route.refresh} />
         {!child && <View style={styles.infoCard}><Text>Link your child with the student code supplied by the school.</Text><TextInput accessibilityLabel="Student code" placeholder="Student code" value={linkCode} onChangeText={setLinkCode} autoCapitalize="characters" /><TouchableOpacity onPress={async () => { try { await routeRequest('/parent/children', { studentCode: linkCode }); const profile = await routeRequest('/parent/me'); setParentData(profile.parent); } catch (e) { alert(e instanceof Error ? e.message : 'Unable to link child'); } }}><Text>Link child</Text></TouchableOpacity></View>}
         <View style={[styles.statusCardNew, tripStatus !== 'started' && { backgroundColor: '#f1f5f9' }]}>
           <View style={styles.tripIcon}><Ionicons name="bus-outline" size={30} color="#fff" /></View>

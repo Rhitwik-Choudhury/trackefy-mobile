@@ -6,13 +6,12 @@ import { LiveTrip, PickupState, routeRequest } from '../../services/routes';
 type Props = {
   trip: LiveTrip | null;
   pickup: PickupState | null;
-  error: string;
   connected: boolean;
   onRequest: () => void;
   onRefresh: () => void;
 };
 
-export default function ParentEtaCard({ trip, pickup, error, connected, onRequest, onRefresh }: Props) {
+export default function ParentEtaCard({ trip, pickup, connected, onRequest, onRefresh }: Props) {
   const [now, setNow] = useState(Date.now()), [ackError, setAckError] = useState('');
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const stale = trip?.status === 'active' && (!trip.lastLocationUpdatedAt || now - Date.parse(trip.lastLocationUpdatedAt) > 30000);
@@ -51,12 +50,11 @@ export default function ParentEtaCard({ trip, pickup, error, connected, onReques
       <Text style={styles.skippedTitle}>Stop skipped</Text>
       <Text style={styles.body}>{trip?.status === 'active' ? 'The bus trip is still in progress, but it will continue without stopping here.' : 'Your child’s stop was marked skipped.'}</Text>
     </View>}
-    {(stale || !connected || error) && <Text style={styles.warning}>{stale ? 'Location is stale. Waiting for the driver to reconnect.' : error || 'Reconnecting. Periodic updates remain active.'}</Text>}
-    {(trip?.offRoute || trip?.routeState === 'rerouting') && <Text style={styles.warning}>Updating the bus route…</Text>}
-    {trip?.routeState === 'cached' && <Text style={styles.warning}>Using the last available route. Times may change.</Text>}
+    {(stale || !connected) && <Text style={styles.warning}>Reconnecting…</Text>}
+    {(trip?.offRoute || trip?.routeState === 'rerouting') && <Text style={styles.warning}>Rerouting…</Text>}
 
     <TouchableOpacity accessibilityRole="button" onPress={onRequest} style={styles.approvedCard}><Ionicons name={pickup?.approved ? "checkmark-circle" : "location-outline"} size={27} color="#00ab5b" /><View style={{ flex: 1 }}>
-      <Text style={styles.approvedTitle}>{pickup?.approved ? 'Pickup/Drop-off Approved' : pickup?.status || 'Pickup location not set'}</Text>
+      <Text style={styles.approvedTitle}>{pickup?.approved ? 'Pickup/Drop-off Approved' : pickup?.request ? 'Request under review' : 'Pickup location not set'}</Text>
       {pickup?.approved
         ? <Text numberOfLines={2} style={styles.approvedAddress}>{pickup.approved.formattedAddress || pickup.approved.name}</Text>
         : <Text style={styles.body}>Submit a pickup point for school approval to receive a personal ETA and arrival alerts.</Text>}
