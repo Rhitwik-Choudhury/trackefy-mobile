@@ -535,20 +535,35 @@ export default function DriverScreen() {
   const handleEndTrip = async (options: EndOptions = {}) => {
     try {
       const token = await AsyncStorage.getItem("token");
+      let endResponse: Response | null = null;
 
-      const endResponse = await fetch(`${BASE_URL}/driver/end-trip`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(options),
-      });
+      // Location updates share the bus lock with end-trip. Retry only that
+      // temporary conflict, which is safe because ending a trip is idempotent.
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        endResponse = await fetch(`${BASE_URL}/driver/end-trip`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(options),
+        });
+        if (endResponse.status !== 423 || attempt === 4) break;
+        await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
+      }
 
-      if (!endResponse.ok) {
-        const errorText = await endResponse.text();
-
+      if (!endResponse?.ok) {
+        const errorText = await endResponse?.text();
         console.log("End trip rejected:", {
-          status: endResponse.status,
+          status: endResponse?.status,
           response: errorText,
         });
 
-        alert("Unable to end the trip. Please try again.");
+        let message = "Unable to end the trip. Please try again.";
+        try {
+          const parsed = errorText ? JSON.parse(errorText) : null;
+          if (typeof parsed?.message === 'string') message = parsed.message;
+        } catch {
+          if (errorText) message = errorText;
+        }
+        alert(message);
         return;
       }
 
@@ -635,9 +650,9 @@ export default function DriverScreen() {
         <View style={styles.statusCard}>
           <Text style={styles.statusTitle}>Trip Status</Text>
 
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>
-              {isOnTrip ? "Started" : "Not Started"}
+          <View style={[styles.statusBadge, isOnTrip && styles.statusBadgeLive]}>
+            <Text style={[styles.statusText, isOnTrip && styles.statusTextLive]}>
+              {isOnTrip ? "Live" : "Not Started"}
             </Text>
           </View>
         </View>
@@ -781,17 +796,17 @@ const styles = StyleSheet.create({
   },
 
   statusBadge: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: "#f59e0b",
-    padding: 10,
-    borderRadius: 10,
+    backgroundColor: "#fffbeb",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
     alignSelf: "flex-start",
   },
-
-  statusText: {
-    color: "#f59e0b",
-    fontWeight: "bold",
-  },
+  statusBadgeLive: { borderColor: "#a7f3d0", backgroundColor: "#d1fae5" },
+  statusText: { color: "#b45309", fontWeight: "700" },
+  statusTextLive: { color: "#047857" },
 
   startButton: {
     backgroundColor: "#22c55e",
