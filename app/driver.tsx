@@ -9,6 +9,7 @@ import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import socket from "../services/socket";
 import { BASE_URL } from "../constants/api";
+import { getStartLocation } from '../services/startLocation';
 import DriverRoutePanel, { StartOptions, EndOptions } from '../components/routes/DriverRoutePanel';
 import { registerDriverReminders, cancelDriverReminder } from '../services/driver-reminders';
 
@@ -247,12 +248,18 @@ export default function DriverScreen() {
     return () => subscription.remove();
   }, []);
   const [driverData, setDriverData] = useState<any>(null);
+  const [confirmedTrip, setConfirmedTrip] = useState<any>(null);
+  const [startPhase, setStartPhase] = useState('');
+  const startInFlight = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
   const locationWatcher = useRef<any>(null);
   const pendingStart = useRef<StartOptions>({ direction: 'TO_SCHOOL' });
   const isOnTrip = driverData?.isOnTrip;
+  const trackingGeneration = useRef(0);
+  const tripActiveRef = useRef(false);
+  tripActiveRef.current = !!isOnTrip;
 
   const fetchDriver = useCallback(async () => {
     try {
@@ -284,13 +291,13 @@ export default function DriverScreen() {
   }, [router]);
 
   // ✅ START TRACKING ONLY WHEN TRIP STARTS
-  const startTracking = useCallback(async (driver: any) => {
+  const startTracking = useCallback(async (driver: any, generation: number) => {
     if (locationWatcher.current) {
       return;
     }
 
     // ✅ Foreground tracking: keep existing smooth realtime socket behavior
-    locationWatcher.current = await Location.watchPositionAsync(
+    const watcher = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: 3000,
@@ -299,7 +306,7 @@ export default function DriverScreen() {
       async (location) => {
         const currentDriver = driver;
 
-        if (!currentDriver?.busId) return;
+        if (!currentDriver?.busId || !tripActiveRef.current || generation !== trackingGeneration.current) return;
 
         const filteredLocation =
           await getFilteredDriverLocation(
@@ -317,6 +324,7 @@ export default function DriverScreen() {
             return;
           }
 
+          if (!tripActiveRef.current || generation !== trackingGeneration.current) return;
           const sendLocation = () =>
             fetch(`${BASE_URL}/driver/location`, {
               method: "POST",
@@ -367,9 +375,12 @@ export default function DriverScreen() {
       }
     );
 
+    if (!tripActiveRef.current || generation !== trackingGeneration.current) { watcher.remove(); return; }
+    locationWatcher.current = watcher;
     const hasStarted =
       await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
 
+    if (!tripActiveRef.current || generation !== trackingGeneration.current) return;
     if (!hasStarted) {
       await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
         accuracy: Location.Accuracy.High,
@@ -389,6 +400,10 @@ export default function DriverScreen() {
       });
     }
 
+    if (!tripActiveRef.current) {
+      await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      watcher.remove();
+    }
     console.log("✅ Foreground + background tracking started");
   }, []);
 
@@ -397,10 +412,11 @@ export default function DriverScreen() {
   }, [fetchDriver]);
 
   useEffect(() => {
+    const generation = ++trackingGeneration.current;
     if (isOnTrip && driverData) {
-      startTracking(driverData).catch(() => alert('Unable to resume tracking. Check location permissions.'));
+      startTracking(driverData, generation).catch(() => alert('Unable to resume tracking. Check location permissions.'));
     }
-    return () => { locationWatcher.current?.remove(); locationWatcher.current = null; };
+    return () => { trackingGeneration.current++; locationWatcher.current?.remove(); locationWatcher.current = null; };
   }, [isOnTrip, driverData, startTracking]);
 
   const stopTracking = async () => {
@@ -426,7 +442,9 @@ export default function DriverScreen() {
 
       const token = await AsyncStorage.getItem("token");
 
-      const gps = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setStartPhase('Getting location…');
+      const gps = await getStartLocation();
+      setStartPhase('Starting…');
       const startResponse = await fetch(`${BASE_URL}/driver/start-trip`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...pendingStart.current, location: { lat: gps.coords.latitude, lng: gps.coords.longitude } }),
@@ -446,35 +464,27 @@ export default function DriverScreen() {
         return;
       }
 
-      // Refresh driver data after the backend confirms trip start.
-      const res = await fetch(
-        `${BASE_URL}/driver/me`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!res.ok) {
-        throw new Error("Unable to refresh driver information");
-      }
-
-      const data = await res.json();
-      setDriverData(data.driver);
+      const result = await startResponse.json();
+      if (!result.trip || result.trip.status !== 'active') throw new Error('Unable to confirm trip start. Please retry.');
+      setConfirmedTrip(result.trip);
+      setDriverData((current: any) => ({ ...current, isOnTrip: true }));
     } catch (err) {
-      console.log("Start trip error:", err);
-      alert("Unable to start the trip. Please check your connection.");
+      console.warn('Start trip failed', err);
+      alert(err instanceof Error ? err.message : 'Unable to start the trip. Please check your connection.');
+    } finally {
+      startInFlight.current = false;
+      setStartPhase('');
     }
   };
 
   const handleStartTrip = async () => {
+    if (startInFlight.current) return;
+    startInFlight.current = true;
+    setStartPhase('Starting…');
     try {
-      const foreground =
-        await Location.getForegroundPermissionsAsync();
-
-      const background =
-        await Location.getBackgroundPermissionsAsync();
+      const [foreground, background] = await Promise.all([
+        Location.getForegroundPermissionsAsync(), Location.getBackgroundPermissionsAsync(),
+      ]);
 
       if (
         foreground.status === "granted" &&
@@ -486,8 +496,10 @@ export default function DriverScreen() {
 
       // Google Play prominent disclosure must appear
       // BEFORE requesting location permissions.
+      setStartPhase('');
       setShowLocationDisclosure(true);
     } catch (err) {
+      startInFlight.current = false; setStartPhase('');
       console.log("Location permission check failed:", err);
       alert("Unable to check location permission. Please try again.");
     }
@@ -506,6 +518,7 @@ export default function DriverScreen() {
       }
 
       if (foreground.status !== "granted") {
+        startInFlight.current = false; setStartPhase('');
         alert(
           "Location permission is required to start a trip and share the bus location."
         );
@@ -521,6 +534,7 @@ export default function DriverScreen() {
       }
 
       if (background.status !== "granted") {
+        startInFlight.current = false; setStartPhase('');
         alert(
           'Please select "Allow all the time" for location permission so Trackefy can continue sharing the bus location when the app is closed or the phone is locked.'
         );
@@ -530,6 +544,7 @@ export default function DriverScreen() {
       // Only start the trip AFTER both permissions are granted.
       await startTripAfterPermissions();
     } catch (err) {
+      startInFlight.current = false; setStartPhase('');
       console.log("Location permission request failed:", err);
       alert("Unable to enable location permission. Please try again.");
     }
@@ -570,11 +585,14 @@ export default function DriverScreen() {
         return;
       }
 
+      const result = await endResponse.json();
+      setConfirmedTrip(result.trip || null);
       // A successful end must stay visibly ended even if local cleanup fails.
+      tripActiveRef.current = false;
       setDriverData((current: any) => ({ ...current, isOnTrip: false }));
       try { await stopTracking(); } catch (error) { console.warn('Trip ended; location cleanup needs retry', error); }
       try { await cancelDriverReminder(); } catch (error) { console.warn('Trip ended; reminder cleanup failed', error); }
-      await fetchDriver();
+      // Tracking cleanup has no bearing on the confirmed ended state.
     } catch (err) {
       console.log("End trip error:", err);
       alert("Unable to end the trip. Please check your connection.");
@@ -589,7 +607,7 @@ export default function DriverScreen() {
         visible={showLocationDisclosure}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowLocationDisclosure(false)}
+        onRequestClose={() => { setShowLocationDisclosure(false); startInFlight.current = false; }}
       >
         <View style={styles.disclosureOverlay}>
           <View style={styles.disclosureCard}>
@@ -616,7 +634,7 @@ export default function DriverScreen() {
             <View style={styles.disclosureButtons}>
               <TouchableOpacity
                 style={styles.notNowButton}
-                onPress={() => setShowLocationDisclosure(false)}
+                onPress={() => { setShowLocationDisclosure(false); startInFlight.current = false; }}
               >
                 <Text style={styles.notNowText}>Not Now</Text>
               </TouchableOpacity>
@@ -649,7 +667,7 @@ export default function DriverScreen() {
           </View>
         </View>
 
-        <DriverRoutePanel active={!!isOnTrip} onStart={async options => { pendingStart.current = options; await handleStartTrip(); }} onEnd={handleEndTrip} />
+        <DriverRoutePanel confirmedTrip={confirmedTrip} startPhase={startPhase} active={!!isOnTrip} onStart={async options => { pendingStart.current = options; await handleStartTrip(); }} onEnd={handleEndTrip} />
 
         <DriverContactEditor visible={contactOpen} phone={driverData?.phone} onClose={() => setContactOpen(false)} onSave={phone => setDriverData((current: any) => ({ ...current, phone }))} />
         {/* MENU */}

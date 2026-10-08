@@ -871,16 +871,11 @@ export default function ParentScreen() {
           </TouchableOpacity>
           <View style={styles.selectorCard}><View style={styles.busAvatar}><Ionicons name="bus" size={27} color="#b57b00" /></View><View style={styles.childInfo}><Text style={styles.childName} numberOfLines={1}>{bus?.busNumber ? `Bus ${bus.busNumber}` : 'No bus assigned'}</Text><Text style={styles.childMeta} numberOfLines={1}>{bus?.route || 'Awaiting assignment'}</Text></View></View>
         </View>
-        <ParentEtaCard trip={route.trip} pickup={route.pickup} connected={route.connected} onRequest={openLocationPicker} onRefresh={route.refresh} />
+        <ParentEtaCard trip={route.trip} pickup={route.pickup} connected={route.connected} onRefresh={route.refresh} />
         {!child && <View style={styles.infoCard}><Text>Link your child with the student code supplied by the school.</Text><TextInput accessibilityLabel="Student code" placeholder="Student code" value={linkCode} onChangeText={setLinkCode} autoCapitalize="characters" /><TouchableOpacity onPress={async () => { try { await routeRequest('/parent/children', { studentCode: linkCode }); const profile = await routeRequest('/parent/me'); setParentData(profile.parent); } catch (e) { alert(e instanceof Error ? e.message : 'Unable to link child'); } }}><Text>Link child</Text></TouchableOpacity></View>}
         <View style={[styles.statusCardNew, tripStatus !== 'started' && { backgroundColor: '#f1f5f9' }]}>
           <View style={styles.tripIcon}><Ionicons name="bus-outline" size={30} color="#fff" /></View>
-          <View style={{ flex: 1 }}><Text style={styles.statusLabel}>Trip Status</Text><Text style={styles.statusValue}>{getStatusText()}</Text><Text style={styles.statusDescription}>
-            {route.trip?.personal?.status === 'skipped' ? route.trip.status === 'active' ? 'Your stop was skipped. The bus trip is still live.' : 'The trip ended before reaching your child’s stop.'
-              : route.trip?.personal?.status === 'completed' ? route.trip.direction === 'TO_SCHOOL' ? 'Your child was picked up. The bus is on the way to school.' : 'Your child’s drop-off stop is completed.'
-              : tripStatus === 'started' ? `Bus is on the way to your ${route.trip?.direction === 'FROM_SCHOOL' ? 'drop-off' : 'pickup'} stop.`
-              : tripStatus === 'ended' ? 'The bus trip has ended.' : 'Waiting for the driver to start the trip.'}
-          </Text></View><Ionicons name="radio-outline" size={30} color="#00ab5b" />
+          <View style={{ flex: 1 }}><Text style={styles.statusLabel}>Trip Status</Text><Text style={styles.statusValue}>{getStatusText()}</Text></View><Ionicons name="radio-outline" size={30} color="#00ab5b" />
         </View>
 
         <View style={styles.mapContainer}>
