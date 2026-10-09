@@ -11,7 +11,7 @@ import {
   Modal,
   Linking,
   BackHandler,
-  Dimensions,
+  useWindowDimensions,
   ScrollView,
   TextInput,
   ActivityIndicator,
@@ -33,8 +33,6 @@ import { BASE_URL } from "../constants/api";
 import messaging from '@react-native-firebase/messaging';
 // import { getApp } from '@react-native-firebase/app';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-const MAP_HEIGHT = Math.min(280, Math.max(190, SCREEN_HEIGHT * 0.27));
 
 type MapCoordinate = {
   latitude: number;
@@ -126,6 +124,17 @@ const smoothHeading = (
 };
 
 export default function ParentScreen() {
+  const { width, height, fontScale } = useWindowDimensions();
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [topHeight, setTopHeight] = useState<number | null>(null);
+  const [actionsHeight, setActionsHeight] = useState<number | null>(null);
+  const minimumMapHeight = height > width ? 240 : 180;
+  // ScrollView measures the safe viewport; the other groups exclude the map.
+  // Padding is 14 top + 24 bottom, with a 10px gap above the actions.
+  const mapHeight = topHeight !== null && actionsHeight !== null && viewportHeight > 0
+    ? Math.max(minimumMapHeight, Math.floor(viewportHeight - topHeight - actionsHeight - 48))
+    : Math.max(minimumMapHeight, height * 0.4);
+
   const [loading, setLoading] = useState(true);
   const alerts = useParentAlerts();
   const [dialog, setDialog] = useState<'children' | 'notifications' | 'contact' | null>(null);
@@ -768,7 +777,7 @@ export default function ParentScreen() {
 
   const getStatusText = () => {
     if (tripStatus === "started") return "Live";
-    if (tripStatus === "ended") return "Trip Ended";
+    if (tripStatus === "ended") return "Ended";
     return "Not Started";
   };
 
@@ -783,9 +792,11 @@ export default function ParentScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#f7faff" }}>
       <ScrollView
+        onLayout={event => setViewportHeight(event.nativeEvent.layout.height)}
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
+        <View onLayout={event => setTopHeight(event.nativeEvent.layout.height)}>
         <View style={styles.topRow}>
           <TouchableOpacity accessibilityLabel="Open menu" style={styles.menuButton} onPress={() => setMenuOpen(!menuOpen)}><Ionicons name="menu-outline" size={25} color="#172554" /></TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 10 }}><Text style={styles.header}>Hello,</Text><Text style={styles.name}>{parent?.fullName || 'Parent'}</Text></View>
@@ -873,12 +884,13 @@ export default function ParentScreen() {
         </View>
         <ParentEtaCard trip={route.trip} pickup={route.pickup} connected={route.connected} onRefresh={route.refresh} />
         {!child && <View style={styles.infoCard}><Text>Link your child with the student code supplied by the school.</Text><TextInput accessibilityLabel="Student code" placeholder="Student code" value={linkCode} onChangeText={setLinkCode} autoCapitalize="characters" /><TouchableOpacity onPress={async () => { try { await routeRequest('/parent/children', { studentCode: linkCode }); const profile = await routeRequest('/parent/me'); setParentData(profile.parent); } catch (e) { alert(e instanceof Error ? e.message : 'Unable to link child'); } }}><Text>Link child</Text></TouchableOpacity></View>}
-        <View style={[styles.statusCardNew, tripStatus !== 'started' && { backgroundColor: '#f1f5f9' }]}>
-          <View style={styles.tripIcon}><Ionicons name="bus-outline" size={30} color="#fff" /></View>
-          <View style={{ flex: 1 }}><Text style={styles.statusLabel}>Trip Status</Text><Text style={styles.statusValue}>{getStatusText()}</Text></View><Ionicons name="radio-outline" size={30} color="#00ab5b" />
+        <View accessibilityLabel={`Trip status: ${getStatusText()}`} style={[styles.statusCardNew, tripStatus === 'started' && styles.statusCardLive]}>
+          <View style={[styles.tripIcon, tripStatus !== 'started' && styles.tripIconNeutral]}><Ionicons name="bus-outline" size={30} color={tripStatus === 'started' ? '#fff' : '#64748b'} /></View>
+          <View style={{ flex: 1 }}><Text style={styles.statusLabel}>Trip Status</Text><Text style={[styles.statusValue, tripStatus === 'started' && styles.statusValueLive, tripStatus === 'ended' && styles.statusValueEnded]}>{getStatusText()}</Text></View><Ionicons name={tripStatus === 'started' ? 'radio-outline' : tripStatus === 'ended' ? 'stop-circle-outline' : 'time-outline'} size={30} color={tripStatus === 'started' ? '#047857' : tripStatus === 'ended' ? '#b91c1c' : '#64748b'} />
         </View>
 
-        <View style={styles.mapContainer}>
+        </View>
+        <View style={[styles.mapContainer, { height: mapHeight }]}>
           <MapView
             provider="google"
             ref={mapRef}
@@ -946,10 +958,10 @@ export default function ParentScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.bottomActions}>
-          <TouchableOpacity accessibilityLabel={alerts.enabled ? "Get Alerts, notifications enabled" : "Get Alerts, enable notifications"} style={styles.bottomAction} onPress={alerts.enableAlerts}><Ionicons name="notifications" size={23} color="#087cf0" /><View style={{ flex: 1 }}><Text style={styles.actionTitle}>Get Alerts</Text><Text style={styles.actionSub}>On-time · Delays</Text></View></TouchableOpacity>
-          <TouchableOpacity style={styles.bottomAction} onPress={openLocationPicker}><Ionicons name="location" size={23} color="#087cf0" /><View style={{ flex: 1 }}><Text style={styles.actionTitle}>Request Change</Text><Text style={styles.actionSub}>Pickup/Drop-off</Text></View></TouchableOpacity>
-          <TouchableOpacity style={styles.bottomAction} onPress={() => { setDialog('contact'); routeRequest('/parent/me').then(profile => setParentData(profile.parent)).catch(() => {}); }}><Ionicons name="call" size={23} color="#00ab5b" /><View style={{ flex: 1 }}><Text style={styles.actionTitle}>Contact</Text><Text style={styles.actionSub}>Driver</Text></View></TouchableOpacity>
+        <View onLayout={event => setActionsHeight(event.nativeEvent.layout.height)} style={[styles.bottomActions, fontScale > 1.3 && styles.bottomActionsLargeText]}>
+          <TouchableOpacity accessibilityLabel={alerts.enabled ? "Get Alerts, notifications enabled" : "Get Alerts, enable notifications"} style={[styles.bottomAction, fontScale > 1.3 && { flexBasis: 'auto', flexGrow: 0 }]} onPress={alerts.enableAlerts}><Ionicons name="notifications" size={23} color="#087cf0" /><View style={{ flex: 1 }}><Text style={styles.actionTitle}>Get Alerts</Text><Text style={styles.actionSub}>On-time · Delays</Text></View></TouchableOpacity>
+          <TouchableOpacity style={[styles.bottomAction, fontScale > 1.3 && { flexBasis: 'auto', flexGrow: 0 }]} onPress={openLocationPicker}><Ionicons name="location" size={23} color="#087cf0" /><View style={{ flex: 1 }}><Text style={styles.actionTitle}>Request Change</Text><Text style={styles.actionSub}>Pickup/Drop-off</Text></View></TouchableOpacity>
+          <TouchableOpacity style={[styles.bottomAction, fontScale > 1.3 && { flexBasis: 'auto', flexGrow: 0 }]} onPress={() => { setDialog('contact'); routeRequest('/parent/me').then(profile => setParentData(profile.parent)).catch(() => {}); }}><Ionicons name="call" size={23} color="#00ab5b" /><View style={{ flex: 1 }}><Text style={styles.actionTitle}>Contact</Text><Text style={styles.actionSub}>Driver</Text></View></TouchableOpacity>
         </View>
         <ParentDialogs kind={dialog} onClose={() => setDialog(null)} children={parent?.children || []} selectedId={child?._id} onChild={setSelectedChildId} driver={driver} notifications={alerts.notifications} error={alerts.error} onRefresh={alerts.refresh} onRead={alerts.markRead} />
 
@@ -1148,9 +1160,13 @@ const styles = StyleSheet.create({
   unreadBadge: { position: 'absolute', top: 1, right: 1, backgroundColor: '#ef4444', minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   unreadText: { color: '#fff', fontSize: 9, fontWeight: '700' },
   tripIcon: { width: 48, height: 48, backgroundColor: '#00ab5b', borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  tripIconNeutral: { backgroundColor: '#e2e8f0' },
+  statusValueLive: { color: '#047857' },
+  statusValueEnded: { color: '#b91c1c' },
   statusValue: { fontSize: 20, fontWeight: '800', color: '#172554' },
-  bottomActions: { flexDirection: 'row', gap: 6, marginTop: 10 },
-  bottomAction: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, backgroundColor: '#fff', paddingHorizontal: 7, paddingVertical: 12, minHeight: 58 },
+  bottomActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+  bottomActionsLargeText: { flexDirection: 'column' },
+  bottomAction: { flexGrow: 1, flexBasis: 96, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, backgroundColor: '#fff', paddingHorizontal: 7, paddingVertical: 12, minHeight: 58 },
   actionTitle: { color: '#087cf0', fontSize: 10, fontWeight: '800' },
   actionSub: { color: '#64748b', fontSize: 8, marginTop: 3 },
   nextMarker: { flexDirection: 'row', alignItems: 'center', padding: 3 },
@@ -1186,7 +1202,7 @@ const styles = StyleSheet.create({
   },
 
   map: {
-    height: MAP_HEIGHT,
+    ...StyleSheet.absoluteFillObject,
   },
   recenter: {
     position: "absolute",
@@ -1402,16 +1418,17 @@ const styles = StyleSheet.create({
   },
 
   statusCardNew: {
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#f1f5f9",
     padding: 12,
     flexDirection: "row",
     gap: 10,
     alignItems: "center",
     borderRadius: 14,
     marginBottom: 10,
-    borderColor: "#d1fae5",
+    borderColor: "#e2e8f0",
     borderWidth: 1,
   },
+  statusCardLive: { backgroundColor: "#dcfce7", borderColor: "#86efac" },
   statusHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   statusLabel: { color: "#64748b", fontSize: 13, fontWeight: "600" },
   statusPill: { fontSize: 12, fontWeight: "700", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, overflow: "hidden" },

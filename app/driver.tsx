@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet, Linking, BackHandler, Modal, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Linking, BackHandler, Modal, ScrollView, useWindowDimensions } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import DriverContactEditor from '../components/routes/DriverContactEditor';
 import { useRouter } from "expo-router";
@@ -232,6 +232,15 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
 });
 
 export default function DriverScreen() {
+  const { width, height } = useWindowDimensions();
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState<number | null>(null);
+  const [routeChromeHeight, setRouteChromeHeight] = useState<number | null>(null);
+  const minimumMapHeight = height > width ? 260 : 180;
+  const mapHeight = headerHeight !== null && routeChromeHeight !== null && viewportHeight > 0
+    ? Math.max(minimumMapHeight, Math.floor(viewportHeight - headerHeight - routeChromeHeight - 28))
+    : Math.max(minimumMapHeight, height * 0.4);
+
   const router = useRouter();
   useEffect(() => registerDriverReminders(), []);
   useEffect(() => {
@@ -649,7 +658,8 @@ export default function DriverScreen() {
           </View>
         </View>
       </Modal>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView onLayout={event => setViewportHeight(event.nativeEvent.layout.height)} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        <View onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
         {/* HEADER */}
         <Text style={styles.header}>Hello,</Text>
         <Text style={styles.name}>{driverData?.fullName || "Driver"}</Text>
@@ -657,7 +667,7 @@ export default function DriverScreen() {
         <View style={styles.card}><View style={styles.busIcon}><Ionicons name="bus" size={35} color="#b57b00" /></View><View style={{ flex: 1 }}><Text style={styles.cardTitle}>Assigned Bus</Text><Text style={styles.busNumber}>{bus?.busNumber || '--'}</Text><Text style={styles.route}>{bus?.route || 'Awaiting assignment'}</Text></View></View>
 
         {/* TRIP STATUS */}
-        <View style={styles.statusCard}>
+        <View accessibilityLabel={`Trip status: ${isOnTrip ? "Live" : "Not Started"}`} style={[styles.statusCard, isOnTrip && styles.statusCardLive]}>
           <Text style={styles.statusTitle}>Trip Status</Text>
 
           <View style={[styles.statusBadge, isOnTrip && styles.statusBadgeLive]}>
@@ -667,7 +677,8 @@ export default function DriverScreen() {
           </View>
         </View>
 
-        <DriverRoutePanel confirmedTrip={confirmedTrip} startPhase={startPhase} active={!!isOnTrip} onStart={async options => { pendingStart.current = options; await handleStartTrip(); }} onEnd={handleEndTrip} />
+        </View>
+        <DriverRoutePanel mapHeight={mapHeight} onChromeHeight={setRouteChromeHeight} confirmedTrip={confirmedTrip} startPhase={startPhase} active={!!isOnTrip} onStart={async options => { pendingStart.current = options; await handleStartTrip(); }} onEnd={handleEndTrip} />
 
         <DriverContactEditor visible={contactOpen} phone={driverData?.phone} onClose={() => setContactOpen(false)} onSave={phone => setDriverData((current: any) => ({ ...current, phone }))} />
         {/* MENU */}
@@ -799,7 +810,9 @@ const styles = StyleSheet.create({
   },
 
   statusCard: {
-    backgroundColor: "#fff",
+    backgroundColor: "#f1f5f9",
+    borderColor: "#e2e8f0",
+    borderWidth: 1,
     padding: 12,
     borderRadius: 12,
     marginBottom: 10,
@@ -808,6 +821,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
+  statusCardLive: { backgroundColor: "#dcfce7", borderColor: "#86efac" },
   statusTitle: {
     color: "#64748b",
     fontSize: 12,
@@ -815,15 +829,15 @@ const styles = StyleSheet.create({
 
   statusBadge: {
     borderWidth: 1,
-    borderColor: "#f59e0b",
-    backgroundColor: "#fffbeb",
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 20,
     alignSelf: "flex-start",
   },
   statusBadgeLive: { borderColor: "#a7f3d0", backgroundColor: "#d1fae5" },
-  statusText: { color: "#b45309", fontWeight: "700" },
+  statusText: { color: "#64748b", fontWeight: "700" },
   statusTextLive: { color: "#047857" },
 
   startButton: {
